@@ -1,0 +1,16 @@
+# Maven
+target/
+
+# Java
+*.class
+*.log
+hs_err_pid*
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Entorno y datos locales
+.env
+data/
