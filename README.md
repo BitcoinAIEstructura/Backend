@@ -1,0 +1,168 @@
+# Backend del bot de Bitcoin
+
+Backend de un proyecto universitario de **Estructuras de Datos**: un bot que analiza el mercado de Bitcoin (BTCUSDT) y simula operaciones.
+
+- Obtiene velas reales de la API pública de Binance.
+- Calcula indicadores técnicos (SMA, EMA, RSI, MACD, Bollinger, volatilidad).
+- Genera señales con varias estrategias, las prueba con datos históricos (backtesting con validación entrenamiento/prueba) y simula operaciones con una cartera ficticia y un bot.
+- Expone todo por HTTP, con eventos en tiempo real (SSE).
+
+> **Todo es simulado.** No opera con dinero real, no se conecta a ninguna cuenta de exchange y no usa claves de API. Los resultados no son asesoría financiera ni garantizan ganancias.
+
+Está escrito en **Java 21 sin frameworks**:
+- **HTTP:** el servidor es `com.sun.net.httpserver` y el cliente `java.net.http.HttpClient`.
+- **JSON:** lector y escritor propios.
+- **Estructuras:** listas, colas y pilas implementadas a mano con nodos enlazados.
+- **Dependencias:** la única externa es JUnit 5, solo para las pruebas.
+
+## Compilar y ejecutar localmente
+
+Requisitos: JDK 21 y Maven 3.9 o superior.
+
+```bash
+mvn test
+```
+
+```bash
+mvn package
+```
+
+```bash
+java -jar target/backend-1.0.0-SNAPSHOT.jar
+```
+
+El servidor queda en `http://localhost:8080` (Ctrl+C lo apaga limpiamente). Para probarlo:
+
+```bash
+curl localhost:8080/health
+curl "localhost:8080/api/velas?intervalo=1d&cantidad=5"
+curl -N localhost:8080/api/stream
+```
+
+En PowerShell usa `curl.exe` en lugar de `curl`. Para los POST con cuerpo JSON es más cómodo `Invoke-RestMethod`; ver [docs/API.md](docs/API.md).
+
+Hay una prueba manual que descarga velas reales de Binance; no corre con `mvn test`:
+
+```bash
+mvn test -Dtest=ClienteBinanceManualTest -Djunit.jupiter.conditions.deactivate=org.junit.*DisabledCondition
+```
+
+## Variables de entorno
+
+Ninguna es obligatoria y ninguna es secreta.
+
+| Variable | Por defecto | Descripción |
+| --- | --- | --- |
+| `PORT` | `8080` | Puerto HTTP. Railway lo define solo; no lo pongas a mano allí. |
+| `BINANCE_BASE_URL` | `https://api.binance.com` | URL base de Binance. Cámbiala si Binance está bloqueado en la región (por ejemplo `https://data-api.binance.vision`). |
+| `ORIGEN_PERMITIDO` | `*` | Origen permitido para CORS; en producción, la URL del frontend. |
+| `TTL_CACHE_SEGUNDOS` | `30` | Segundos que se guardan en caché el precio y las velas (`0` la desactiva). |
+| `SIMBOLO` | `BTCUSDT` | Par de mercado. |
+| `DATA_DIR` | `./data` | Carpeta donde se guarda la simulación (cartera, órdenes e historial). |
+| `MAX_STREAMS` | `50` | Conexiones simultáneas permitidas a `/api/stream`. |
+| `JAVA_OPTS` | `-Xmx256m -XX:+UseSerialGC` | Opciones de la JVM. Solo se aplica en la imagen Docker. |
+
+Si una variable tiene un valor inválido, el servidor no arranca y explica cuál es el problema.
+
+## Docker
+
+La imagen se construye en dos etapas:
+- **Construcción:** Maven con Temurin 21 compila el jar.
+- **Ejecución:** imagen ligera con el JRE 21 sobre Alpine. Solo lleva el jar y corre con un usuario sin privilegios.
+
+```bash
+docker build -t bitcoin-backend .
+```
+
+```bash
+docker run --rm -p 8080:8080 bitcoin-backend
+```
+
+```bash
+curl localhost:8080/health
+```
+
+Otro puerto y datos persistentes en una carpeta del equipo:
+
+```bash
+docker run --rm -e PORT=9090 -p 9090:9090 -e DATA_DIR=/app/data -v "$(pwd)/data:/app/data" bitcoin-backend
+```
+
+## Despliegue en Railway
+
+Railway detecta el `Dockerfile` y construye la imagen.
+
+1. Crea un proyecto desde este repositorio (hay que autorizar a Railway en la organización de GitHub).
+2. **Variables:**
+   - `ORIGEN_PERMITIDO` = URL del frontend.
+   - **No definas `PORT`:** Railway lo pone solo.
+3. **Networking:** genera un dominio público.
+4. **Settings:** escribe `/health` como ruta del healthcheck. Ese endpoint nunca consulta Binance, así que responde aunque Binance falle.
+5. **Persistencia:** el disco del contenedor **se borra en cada despliegue**. Para que la cartera y las órdenes sobrevivan:
+   - Agrega un volumen montado en `/data`.
+   - Define `DATA_DIR=/data`.
+   - Define también `RAILWAY_RUN_UID=0`. Railway monta los volúmenes como root y la imagen corre con un usuario sin privilegios; sin esa variable no podría escribir en el volumen ([documentación de volúmenes de Railway](https://docs.railway.com/volumes)).
+
+   Sin volumen, cada despliegue empieza con 10 000 USDT nuevos.
+6. **Error de región:**
+   - **Síntoma:** si `/api/velas` responde 502 y el registro dice *"Binance no está disponible desde esta región; cambia la región del servicio o la URL base"*, Binance bloquea la región del servidor (por ejemplo, EE. UU.).
+   - **Solución:** cambia la región del servicio en Railway, o prueba otra `BINANCE_BASE_URL`.
+
+**Listo cuando:** `https://tu-dominio/health` responde `{"estado":"ok"}` y `/api/velas?intervalo=1d&cantidad=5` devuelve velas reales.
+
+## Endpoints
+
+Detalle, parámetros y ejemplos reales en [docs/API.md](docs/API.md).
+
+| Método y ruta | Qué hace |
+| --- | --- |
+| `GET /health` | Estado del servicio, sin consultar Binance |
+| `GET /api/precio` | Último precio de BTCUSDT |
+| `GET /api/velas?intervalo=1d&cantidad=200` | Velas (1m, 5m, 15m, 1h, 4h, 1d; hasta 1000) |
+| `GET /api/indicadores?indicador=rsi&periodo=14` | Indicador técnico: sma, ema, rsi, macd, bollinger, volatilidad |
+| `GET /api/senal?estrategia=combinada` | Decisión más reciente y pronóstico de una estrategia |
+| `GET /api/backtest?estrategia=cruce&capital=1000` | Backtest y validación entrenamiento/prueba (70/30) |
+| `POST /api/ordenes` | Crea una orden simulada `{"tipo":"COMPRA","monto":500}` |
+| `GET /api/ordenes?estado=PENDIENTE` | Lista órdenes |
+| `GET /api/ordenes/{id}` | Una orden |
+| `DELETE /api/ordenes/{id}` | Cancela una orden pendiente |
+| `POST /api/ordenes/procesar` | Ejecuta la siguiente orden de la cola |
+| `POST /api/ordenes/deshacer` | Deshace la última orden creada si sigue pendiente |
+| `GET /api/cartera` | Cartera simulada valorada al precio actual |
+| `GET /api/historial?limite=50` | Historial de eventos, el más reciente primero |
+| `POST /api/bot/iniciar` | Pone en marcha el bot simulado (configuración opcional en el cuerpo) |
+| `POST /api/bot/detener` | Detiene el bot |
+| `GET /api/bot/estado` | Estado del bot y su última decisión |
+| `GET /api/stream` | Eventos en tiempo real (SSE): `precio`, `orden`, `cartera`, `senal` |
+
+## Estructuras de datos
+
+Están en `com.bitcoinai.backend.estructuras`:
+- Son genéricas e implementadas a mano con nodos enlazados, sin `ArrayList`, `LinkedList`, `ArrayDeque`, `Stack` ni `Queue` del JDK.
+- Cada operación documenta su complejidad. La tabla completa está en [docs/ESTRUCTURAS.md](docs/ESTRUCTURAS.md).
+
+| Estructura | Dónde se usa | Por qué esa estructura |
+| --- | --- | --- |
+| **ListaDoble** | Velas de mercado (`ClienteBinance`, indicadores, `Backtester`) | Las velas nuevas entran por el final y las viejas salen por el inicio en O(1) (`conservarUltimos` para las ventanas de SMA, Bollinger y volatilidad). Se recorre hacia atrás para unir los lotes de Binance y para tomar los valores más recientes (`Series.ultimos`). |
+| **ListaDoble** | Clientes de `/api/stream` (`Publicador`) | Cada cliente guarda su nodo; al desconectarse se quita con `eliminarNodo` en O(1), sin recorrer la lista. |
+| **Cola** | Órdenes pendientes (`LibroDeOrdenes`) | Se ejecutan en orden de llegada (FIFO). Cancelar una del medio reconstruye la cola en O(n) conservando el orden de las demás. |
+| **Pila** | Historial de eventos y de decisiones (`LibroDeOrdenes`, `Backtester`) | El evento más reciente queda arriba (LIFO). Otra pila de ids permite deshacer la última orden, y luego la anterior. |
+| **Lista** | Registro de órdenes terminadas y operaciones cerradas del backtest | Se agregan al final en O(1) y se recorren para mostrar y calcular métricas. |
+
+## Estructura del código
+
+Paquetes bajo `com.bitcoinai.backend`:
+
+| Paquete | Contenido |
+| --- | --- |
+| `estructuras` | Lista, ListaDoble, Cola y Pila |
+| `modelo` | Vela e Intervalo |
+| `util` | Lector y escritor de JSON |
+| `mercado` | Cliente de Binance, caché y validación de velas |
+| `indicadores` | Indicadores técnicos |
+| `estrategia` | Estrategias, pronóstico, backtest y validación |
+| `simulacion` | Cartera, libro de órdenes y bot |
+| `persistencia` | Guardado en archivos JSON |
+| `api` | Servidor HTTP, enrutador, filtros, endpoints y SSE |
+
+En cada push y pull request, GitHub Actions ejecuta `mvn -B test` con Java 21 (`.github/workflows/ci.yml`).
