@@ -131,6 +131,7 @@ def test_las_respuestas_llevan_encabezados_cors(cliente: TestClient) -> None:
     r = cliente.get("/health")
     assert r.headers["access-control-allow-origin"] == ORIGEN
     assert r.headers["vary"] == "Origin"
+    assert r.headers["access-control-allow-credentials"] == "true"  # el frontend puede mandar la cookie
     error = cliente.get("/nada")
     assert error.headers["access-control-allow-origin"] == ORIGEN
 
@@ -149,6 +150,23 @@ def test_origen_comodin_por_defecto(fuente: FuenteFalsa) -> None:
     r = TestClient(crear_app(Configuracion(), fuente)).get("/health")
     assert r.headers["access-control-allow-origin"] == "*"
     assert "vary" not in r.headers
+    assert "access-control-allow-credentials" not in r.headers  # nunca con "*"
+
+
+def test_encabezados_de_seguridad(cliente: TestClient) -> None:
+    for respuesta in (cliente.get("/health"), cliente.get("/nada")):
+        h = respuesta.headers
+        assert h["x-content-type-options"] == "nosniff"
+        assert h["x-frame-options"] == "DENY"
+        assert h["referrer-policy"] == "no-referrer"
+        assert h["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'"
+        assert "strict-transport-security" not in h
+    assert "content-security-policy" not in cliente.get("/docs").headers  # la documentación usa scripts
+
+
+def test_hsts_solo_con_cookie_segura(fuente: FuenteFalsa) -> None:
+    r = TestClient(crear_app(Configuracion(cookie_segura=True), fuente)).get("/health")
+    assert r.headers["strict-transport-security"].startswith("max-age=31536000")
 
 
 # ---------- fallos ----------
