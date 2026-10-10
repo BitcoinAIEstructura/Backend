@@ -37,10 +37,12 @@ python -m bitcoinai
 | 400 | Parámetro inválido; el mensaje dice cuál y por qué |
 | 404 | La ruta no existe |
 | 405 | La ruta existe pero no con ese método; incluye el encabezado `Allow` |
+| 401, 409, 429 | Cuentas y sesión: ver [Cuentas y seguridad](#cuentas-y-seguridad) |
 | 502 | La fuente de mercado (Binance) falló: `{"error":"Fuente de mercado no disponible"}` |
 | 500 | Error inesperado: `{"error":"Error interno del servidor"}`, sin detalles ni trazas |
 
-- **CORS:** todas las respuestas llevan `Access-Control-Allow-Origin` con el valor de `ORIGEN_PERMITIDO`. Las peticiones `OPTIONS` (preflight) reciben `204` sin cuerpo.
+- **CORS:** todas las respuestas llevan `Access-Control-Allow-Origin` con el valor de `ORIGEN_PERMITIDO`. Las peticiones `OPTIONS` (preflight) reciben `204` sin cuerpo. Con un origen concreto (no `*`) también llevan `Access-Control-Allow-Credentials: true`, para que el navegador envíe la cookie de sesión.
+- **Encabezados de seguridad:** `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` (salvo en `/docs`), `Referrer-Policy: no-referrer` y, con `COOKIE_SEGURA=true`, `Strict-Transport-Security`.
 - **Barra final:** se ignora; `/health/` es lo mismo que `/health`.
 - **Registro:** cada petición deja una línea en la consola del servidor, por ejemplo `GET /api/velas 200 35 ms`.
 - **Caché:** el precio y las velas se guardan en memoria `TTL_CACHE_SEGUNDOS` segundos, así que dos peticiones iguales seguidas solo consultan Binance una vez.
@@ -494,9 +496,95 @@ La simulación (cartera, órdenes e historial) se guarda en archivos JSON dentro
   - El historial se carga aparte.
 - **Railway:** el disco de un contenedor de Railway **se borra en cada despliegue**. Para conservar la simulación hay que montar un volumen (por ejemplo en `/data`) y definir `DATA_DIR=/data`. Sin volumen, cada despliegue empieza con 10 000 USDT nuevos.
 
+## Cuentas y seguridad
+
+Registro con documento, inicio de sesión con correo y contraseña, verificación en dos pasos (Google Authenticator) y centro de seguridad. Más detalle técnico en [SEGURIDAD.md](SEGURIDAD.md).
+
+**La sesión va en una cookie**, no en el cuerpo:
+
+- **Atributos:** `HttpOnly` (el JavaScript de la página no la puede leer), `SameSite=Strict` (no se envía desde otros sitios) y `Path=/`.
+- **Con `COOKIE_SEGURA=true`:** además lleva `Secure` y el nombre pasa a ser `__Host-sesion`.
+- **Duración:** 12 horas como máximo; se cierra sola tras 2 horas sin uso.
+- **Desde el frontend:** las peticiones deben enviarse con credenciales (`fetch(url, { credentials: "include" })`), y `ORIGEN_PERMITIDO` debe ser la URL exacta del frontend, nunca `*`.
+
+**Errores propios de las cuentas** (siempre con `{"error": "..."}`):
+
+| Código | Cuándo |
+| --- | --- |
+| 400 | Dato inválido. Incluye `campo` para marcar la casilla del formulario: `{"error":"Un celular colombiano tiene 10 dígitos y empieza por 3","campo":"telefono"}` |
+| 401 | Correo o contraseña incorrectos (nunca se dice cuál de los dos), código incorrecto, o no hay sesión |
+| 409 | El correo o el documento ya tienen cuenta, o la operación no aplica (por ejemplo, activar dos veces la verificación) |
+| 429 | Demasiados intentos. Incluye `Retry-After` con los segundos de espera |
+
+Las respuestas de `/api/cuentas/*` y `/api/sesion*` llevan `Cache-Control: no-store`.
+
+### `POST /api/cuentas/registro`
+
+```json
+{"nombre":"Ana","apellido":"Pérez","correo":"ana@correo.co","tipoDocumento":"CC",
+ "numeroDocumento":"1.023.456.789","telefono":"300 123 4567","contrasena":"Luna-Roja-2026"}
+```
+
+- **`tipoDocumento`:** `CC` (cédula de ciudadanía: de 5 a 10 dígitos) o `CE` (cédula de extranjería: de 5 a 12 letras o números). Se aceptan puntos, espacios y guiones.
+- **`telefono`:** celular colombiano de 10 dígitos que empieza por 3, o cualquier número con indicativo (`+1…`, `+34…`). Se guarda como `+573001234567`.
+- **`nombre` y `apellido`:** de 2 a 50 letras; se admiten tildes, ñ, espacios, apóstrofo y guion.
+- **`contrasena`:**
+  - De 10 a 128 caracteres.
+  - Al menos 3 de estos 4: minúsculas, mayúsculas, números y símbolos.
+  - No puede ser una contraseña común o predecible.
+  - No puede contener el nombre, el correo ni el documento.
+- **Campos desconocidos:** se rechazan con 400.
+- **Límite:** 10 registros por hora desde una misma IP.
+
+Responde `201` y deja la sesión abierta (`Set-Cookie`). El documento y el teléfono vuelven enmascarados:
+
+```json
+{"usuario":{"id":1,"nombre":"Ana","apellido":"Pérez","correo":"ana@correo.co","tipoDocumento":"CC",
+ "documento":"******6789","telefono":"+57******4567","verificacionDosPasos":false,"creadoEn":1791604997952}}
+```
+
+### `POST /api/sesion`
+
+Recibe `{"correo":"ana@correo.co","contrasena":"..."}`.
+
+- **Sin verificación en dos pasos:** responde `{"segundoPaso": false, "usuario": {...}}` y abre la sesión.
+- **Con verificación en dos pasos:** responde `{"segundoPaso": true}` y deja una cookie `desafio` de 5 minutos. Hay que enviar el código a `POST /api/sesion/codigo`.
+- **Bloqueo:** tras 5 contraseñas equivocadas para un correo (o 20 desde una IP) en 15 minutos, responde `429` hasta que pase la ventana, aunque luego llegue la contraseña correcta.
+
+### `POST /api/sesion/codigo`
+
+Recibe `{"codigo":"123456"}`: el código de 6 dígitos de la app, o un código de respaldo (`ABCDE-FGHIJ`), que se gasta al usarlo.
+
+- **Correcto:** responde como un inicio de sesión correcto.
+- **Incorrecto:** `401`. Cada desafío admite 5 códigos equivocados.
+
+### `DELETE /api/sesion`
+
+Cierra la sesión de este dispositivo y borra la cookie. Responde `204`, aunque ya estuviera cerrada.
+
+### `GET /api/cuentas/yo`
+
+Devuelve `{"usuario": {...}}`, o `401` si no hay sesión. Sirve al frontend para saber si hay alguien conectado al cargar la página.
+
+### Centro de seguridad (todo exige sesión)
+
+| Método y ruta | Cuerpo | Respuesta |
+| --- | --- | --- |
+| `POST /api/cuentas/dos-pasos` | — | `{"secreto":"JBSW…","uri":"otpauth://totp/BitcoinAI:ana%40correo.co?…"}`. La `uri` se muestra como código QR para escanearlo con Google Authenticator; queda inactiva hasta confirmarla |
+| `POST /api/cuentas/dos-pasos/confirmar` | `{"codigo":"123456"}` | `{"codigosRespaldo":["ABCDE-FGHIJ", …]}`: 10 códigos que se muestran una sola vez |
+| `POST /api/cuentas/dos-pasos/desactivar` | `{"contrasena":"…","codigo":"123456"}` | `204` |
+| `POST /api/cuentas/dos-pasos/codigos` | `{"codigo":"123456"}` | 10 códigos de respaldo nuevos; los anteriores dejan de servir |
+| `GET /api/cuentas/sesiones` | — | `{"sesiones":[{"id","actual","ip","agente","creadaEn","ultimaActividad","expiraEn"}]}`, la más reciente primero |
+| `DELETE /api/cuentas/sesiones/{id}` | — | `204`; `409` si no existe o ya estaba cerrada |
+| `POST /api/cuentas/sesiones/cerrar-otras` | — | `{"cerradas": 2}` |
+| `GET /api/cuentas/actividad?limite=50` | — | `{"eventos":[{"momento","tipo","descripcion","ip","detalle"}]}`, de 1 a 200 eventos, el más reciente primero |
+| `POST /api/cuentas/contrasena` | `{"contrasenaActual":"…","contrasenaNueva":"…"}` | `204`. Cierra las demás sesiones. Si la nueva no cumple la política: `400` con `"campo":"contrasenaNueva"` |
+
+Los códigos de 6 dígitos equivocados con la sesión abierta también se limitan: 5 cada 15 minutos.
+
 ## Variables de entorno
 
-Ninguna es obligatoria y ninguna es secreta.
+Ninguna es obligatoria. La única secreta es `CLAVE_CIFRADO`.
 
 | Variable | Por defecto | Descripción |
 | --- | --- | --- |
@@ -507,5 +595,9 @@ Ninguna es obligatoria y ninguna es secreta.
 | `SIMBOLO` | `BTCUSDT` | Par de mercado que se consulta. |
 | `MAX_STREAMS` | `50` | Conexiones simultáneas permitidas a `/api/stream` (entre 1 y 10 000). |
 | `DATA_DIR` | `./data` | Carpeta donde se guarda la simulación. En Railway, apúntala a un volumen montado (por ejemplo `/data`); si no, se borra en cada despliegue. |
+| `BASE_DATOS` | `<DATA_DIR>/bitcoinai.db` | Archivo SQLite con usuarios, sesiones y actividad. |
+| `CLAVE_CIFRADO` | (se genera una local) | **Secreta.** 32 bytes en base64 para cifrar los datos personales. Si falta, se crea `<DATA_DIR>/clave-cifrado.key`. En producción defínela como secreto; si se pierde, los datos cifrados no se pueden recuperar. |
+| `COOKIE_SEGURA` | `false` | `true` cuando el backend se sirve por HTTPS (Railway): cookie `Secure` con prefijo `__Host-` y HSTS. |
+| `CONFIAR_PROXY` | `false` | `true` solo detrás de un proxy propio (Railway): la IP real se toma de `X-Forwarded-For`, para los límites de intentos y la actividad. |
 
 Si una variable tiene un valor inválido (por ejemplo `PORT=abc`), el servidor no arranca y muestra un mensaje que explica el problema.
