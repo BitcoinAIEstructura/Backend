@@ -6,6 +6,7 @@ Backend de un proyecto universitario de **Estructuras de Datos**: un bot que ana
 - Calcula indicadores técnicos (SMA, EMA, RSI, MACD, Bollinger, volatilidad).
 - Genera señales con varias estrategias, las prueba con datos históricos (backtesting con validación entrenamiento/prueba) y simula operaciones con una cartera ficticia y un bot.
 - Expone todo por HTTP, con eventos en tiempo real (SSE).
+- Cuentas de usuario seguras: registro con cédula (CC o CE), contraseñas con Argon2id, datos personales cifrados, verificación en dos pasos con Google Authenticator y centro de seguridad. Ver [docs/SEGURIDAD.md](docs/SEGURIDAD.md).
 
 > **Todo es simulado.** No opera con dinero real, no se conecta a ninguna cuenta de exchange y no usa claves de API. Los resultados no son asesoría financiera ni garantizan ganancias.
 
@@ -13,7 +14,8 @@ Está escrito en **Python 3.13 con FastAPI**. El frontend (TypeScript) está en 
 - **HTTP:** el servidor es FastAPI sobre uvicorn y el cliente de Binance usa httpx.
 - **JSON:** el módulo estándar `json`.
 - **Estructuras:** listas, colas y pilas implementadas a mano con nodos enlazados (ver más abajo).
-- **Dependencias:** FastAPI, uvicorn y httpx; para desarrollar, pytest, ruff y mypy.
+- **Base de datos:** SQLite (módulo estándar `sqlite3`) para usuarios, sesiones y actividad.
+- **Dependencias:** FastAPI, uvicorn, httpx, argon2-cffi y cryptography; para desarrollar, pytest, ruff y mypy.
 
 La primera versión del proyecto estaba en Java 21; quedó guardada en la etiqueta `java-final`.
 
@@ -69,7 +71,7 @@ pytest -m manual -s
 
 ## Variables de entorno
 
-Ninguna es obligatoria y ninguna es secreta.
+Ninguna es obligatoria. La única secreta es `CLAVE_CIFRADO`. Hay un ejemplo completo en [.env.example](.env.example).
 
 | Variable | Por defecto | Descripción |
 | --- | --- | --- |
@@ -80,6 +82,10 @@ Ninguna es obligatoria y ninguna es secreta.
 | `SIMBOLO` | `BTCUSDT` | Par de mercado. |
 | `DATA_DIR` | `./data` | Carpeta donde se guarda la simulación (cartera, órdenes e historial). |
 | `MAX_STREAMS` | `50` | Conexiones simultáneas permitidas a `/api/stream` (entre 1 y 10 000). |
+| `BASE_DATOS` | `<DATA_DIR>/bitcoinai.db` | Archivo SQLite de usuarios, sesiones y actividad. |
+| `CLAVE_CIFRADO` | (se genera una local) | **Secreta.** 32 bytes en base64 para cifrar los datos personales. Si falta, se crea `data/clave-cifrado.key`. |
+| `COOKIE_SEGURA` | `false` | `true` con HTTPS: cookie `Secure` con prefijo `__Host-` y HSTS. |
+| `CONFIAR_PROXY` | `false` | `true` detrás del proxy de Railway, para leer la IP real. |
 
 Si una variable tiene un valor inválido, el servidor no arranca y explica cuál es el problema.
 
@@ -113,7 +119,9 @@ Railway detecta el `Dockerfile` y construye la imagen.
 
 1. Crea un proyecto desde este repositorio (hay que autorizar a Railway en la organización de GitHub).
 2. **Variables:**
-   - `ORIGEN_PERMITIDO` = URL del frontend.
+   - `ORIGEN_PERMITIDO` = URL exacta del frontend (nunca `*`: la cookie de sesión necesita credenciales).
+   - `CLAVE_CIFRADO` = una clave nueva, marcada como secreta (ver [docs/SEGURIDAD.md](docs/SEGURIDAD.md)).
+   - `COOKIE_SEGURA=true` y `CONFIAR_PROXY=true`.
    - **No definas `PORT`:** Railway lo pone solo.
 3. **Networking:** genera un dominio público.
 4. **Settings:** escribe `/health` como ruta del healthcheck. Ese endpoint nunca consulta Binance, así que responde aunque Binance falle.
@@ -153,6 +161,10 @@ Detalle, parámetros y ejemplos en [docs/API.md](docs/API.md).
 | `POST /api/bot/detener` | Detiene el bot |
 | `GET /api/bot/estado` | Estado del bot y su última decisión |
 | `GET /api/stream` | Eventos en tiempo real (SSE): `precio`, `orden`, `cartera`, `senal` |
+| `POST /api/cuentas/registro` | Crea una cuenta (cédula, nombre, apellido, correo, teléfono y contraseña) |
+| `POST /api/sesion` · `POST /api/sesion/codigo` · `DELETE /api/sesion` | Iniciar sesión (con código de 6 dígitos si hay verificación en dos pasos) y cerrarla |
+| `GET /api/cuentas/yo` | La cuenta de la sesión actual |
+| `/api/cuentas/dos-pasos…`, `/api/cuentas/sesiones…`, `/api/cuentas/actividad`, `/api/cuentas/contrasena` | Centro de seguridad |
 
 ## Estructuras de datos
 
@@ -167,6 +179,7 @@ Están en `src/bitcoinai/estructuras`:
 | **Cola** | Órdenes pendientes (`LibroDeOrdenes`) y buzón de cada cliente de `/api/stream` | Se atienden en orden de llegada (FIFO). Cancelar una orden del medio reconstruye la cola en O(n) conservando el orden de las demás. |
 | **Pila** | Historial de eventos y de decisiones (`LibroDeOrdenes`, `Backtester`) | El evento más reciente queda arriba (LIFO). Otra pila de ids permite deshacer la última orden, y luego la anterior. |
 | **Lista** | Registro de órdenes terminadas y operaciones cerradas del backtest | Se agregan al final en O(1) y se recorren para mostrar y calcular métricas. |
+| **Cola** | Límite de intentos de inicio de sesión (`LimitadorIntentos`) | Ventana deslizante: los intentos vencidos salen por el frente, O(1) amortizado por intento. |
 
 Las estrategias recuerdan el estado de sus indicadores entre velas (memoria incremental), así que un backtest cuesta O(n) y no O(n²).
 
@@ -183,6 +196,9 @@ Paquetes bajo `src/bitcoinai`:
 | `estrategia` | Estrategias, pronóstico, backtest y validación |
 | `simulacion` | Cartera, libro de órdenes y bot |
 | `persistencia` | Guardado en archivos JSON |
+| `basedatos` | Conexión SQLite y migraciones |
+| `seguridad` | Argon2id, cifrado, verificación en dos pasos y límites de intentos |
+| `usuarios` | Cuentas: validación, registro, sesiones y actividad |
 | `api` | Aplicación FastAPI, middlewares, endpoints y SSE |
 
 Las pruebas están en `tests/`, con la misma organización.

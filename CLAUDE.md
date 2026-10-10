@@ -7,6 +7,8 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se�
 - Python 3.13.
 - API con FastAPI + uvicorn. pydantic solo dentro del paquete `api`; el dominio no depende de FastAPI.
 - Cliente HTTP de Binance con httpx.
+- Base de datos SQLite con el módulo estándar `sqlite3`; consultas siempre con parámetros (`?`) y cambios de esquema solo con migraciones nuevas en `basedatos/migraciones.py`.
+- Seguridad: contraseñas con Argon2id (argon2-cffi), datos personales cifrados con AES-GCM (cryptography). Nunca registrar contraseñas, tokens ni datos personales en los logs. Ver `docs/SEGURIDAD.md`.
 - JSON con el módulo `json` estándar.
 - Tipado completo: `mypy --strict` debe pasar.
 - **Todo es simulado:** nunca se conecta a una cuenta real de un exchange ni usa claves de API de exchanges. Solo lee datos públicos de mercado.
@@ -24,7 +26,7 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se�
 - La guía de prompts está en `docs/GUIA-MIGRACION-PYTHON.md`.
 
 ## Paquetes (bajo `src/bitcoinai`)
-`estructuras`, `modelo`, `mercado`, `indicadores`, `estrategia`, `simulacion`, `api`, `persistencia`. Pruebas en `tests/`.
+`estructuras`, `modelo`, `mercado`, `indicadores`, `estrategia`, `simulacion`, `api`, `persistencia`, `basedatos`, `seguridad`, `usuarios`. Pruebas en `tests/`.
 
 ## Comandos
 - Crear el entorno (una vez): `py -3.13 -m venv .venv`
@@ -50,3 +52,13 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se�
 - [x] 6. Simulación de operaciones
 - [x] 7. Tiempo real y persistencia
 - [x] 8. Docker y Railway
+
+## Etapa 2: plataforma (el frontend nuevo está en otro repositorio)
+- [x] 1. Usuarios y seguridad: registro con CC/CE, Argon2id, datos cifrados, sesiones con cookie, 2FA (TOTP), límites de intentos, actividad
+- [ ] 2. Cada usuario con su propia simulación (cartera, órdenes y bot)
+- [ ] 3. Frontend nuevo: inicio de sesión con moneda 3D y diseño futurista adaptable
+- [ ] 4. Panel con gráficas en vivo
+- [ ] 5. Estructuras avanzadas (montículo, árbol AVL, tabla hash, cola circular, trie) y pantalla "Cómo funciona"
+- [ ] 6. IA: regresión logística, árbol de decisión, k vecinos y comité
+- [ ] 7. Seguridad extra y pulido
+- [ ] 8. Entrega: despliegue, documentación y presentación
