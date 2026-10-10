@@ -1,11 +1,23 @@
 # Lo que no debe entrar al contexto de construcción de Docker
-target/
 .git/
+.venv/
+venv/
 data/
+tests/
+docs/
 .idea/
 .vscode/
 .claude/
 .github/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.env
 
 # Documentación en Markdown, salvo el README
 **/*.md

@@ -1,6 +1,32 @@
 # API HTTP
 
-Servidor sobre `com.sun.net.httpserver`, un hilo virtual por petición. Todas las respuestas con cuerpo son `application/json; charset=utf-8`, también los errores.
+Servidor en Python con **FastAPI** sobre **uvicorn** (antes era Java con `com.sun.net.httpserver`; el contrato no cambió). Todas las respuestas con cuerpo son `application/json; charset=utf-8`, también los errores.
+
+## Arrancar el servidor (Python)
+
+Requisito: Python 3.13. Desde la raíz del repo:
+
+```bash
+py -3.13 -m venv .venv
+```
+
+```bash
+.venv\Scripts\activate
+```
+
+```bash
+pip install -e ".[dev]"
+```
+
+```bash
+python -m bitcoinai
+```
+
+- **Activar el entorno:** el segundo comando es para Windows; en Linux o macOS es `source .venv/bin/activate`.
+- **Dónde queda:** en `http://localhost:8080`, o en el puerto de la variable `PORT`. Ctrl+C lo apaga.
+- **Documentación interactiva:** FastAPI la publica en **`/docs`** (por ejemplo `http://localhost:8080/docs`). Ahí se ven todos los endpoints con sus parámetros y se pueden probar desde el navegador. El esquema OpenAPI está en `/openapi.json`.
+- **Números:** pueden venir como `100` o `100.0` según el valor; en JSON son el mismo número.
+- **Ejemplos de esta página:** salieron de la versión Java. La versión Python devuelve las mismas claves en el mismo orden, y los valores calculados coinciden porque se portaron los mismos algoritmos y pruebas.
 
 ## Convenciones
 

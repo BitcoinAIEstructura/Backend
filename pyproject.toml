@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bitcoinai-backend"
+version = "2.0.0"
+description = "Backend del bot de Bitcoin: velas de Binance, indicadores, señales y simulación de operaciones (sin dinero real)."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.143,<1",
+    "uvicorn>=0.54,<1",
+    "httpx>=0.28.1,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1,<10",
+    "ruff==0.16.10",
+    "mypy>=2.4,<3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------- pytest ----------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "manual: pruebas que necesitan internet (Binance real); se corren con pytest -m manual",
+]
+addopts = "-m 'not manual'"
+filterwarnings = [
+    # Starlette 1.7 prefiere el paquete httpx2 para su TestClient; httpx sigue funcionando.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
+
+# ---------- ruff (estilo) ----------
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# E/W: estilo, F: errores, I: orden de imports, B: errores frecuentes, UP: Python moderno, N: nombres
+select = ["E", "W", "F", "I", "B", "UP", "N"]
+
+# ---------- mypy (tipos) ----------
+[tool.mypy]
+python_version = "3.13"
+strict = true
+mypy_path = "src"
