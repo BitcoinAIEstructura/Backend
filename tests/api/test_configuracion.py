@@ -12,6 +12,8 @@ def test_valores_por_defecto() -> None:
     assert c.simbolo == "BTCUSDT"
     assert c.max_streams == 50
     assert c.data_dir == "./data"
+    assert c.ruta_base_datos == "./data/bitcoinai.db"
+    assert (c.cookie_segura, c.confiar_proxy) == (False, False)
 
 
 def test_lee_las_variables_definidas() -> None:
@@ -64,3 +66,12 @@ def test_max_streams_fuera_de_rango() -> None:
     for valor in ("0", "10001", "muchos"):
         with pytest.raises(ValueError, match="MAX_STREAMS debe ser un número entero entre 1 y 10000"):
             Configuracion.desde_entorno({"MAX_STREAMS": valor})
+
+
+def test_base_de_datos_cookie_y_proxy() -> None:
+    c = Configuracion.desde_entorno({"DATA_DIR": "/data/", "COOKIE_SEGURA": "true", "CONFIAR_PROXY": "1"})
+    assert c.ruta_base_datos == "/data/bitcoinai.db"
+    assert (c.cookie_segura, c.confiar_proxy) == (True, True)
+    assert Configuracion.desde_entorno({"BASE_DATOS": "otra.db"}).ruta_base_datos == "otra.db"
+    with pytest.raises(ValueError, match="COOKIE_SEGURA debe ser true o false"):
+        Configuracion.desde_entorno({"COOKIE_SEGURA": "quizas"})
