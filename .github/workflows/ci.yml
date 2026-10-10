@@ -30,3 +30,23 @@ jobs:
       - name: Pruebas (pytest)
         run: pytest
 
+  docker:
+    name: Imagen Docker
+    runs-on: ubuntu-latest
+    needs: pruebas
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Construir la imagen
+        run: docker build -t bitcoinai-backend .
+
+      - name: Arrancar el contenedor y probar /health
+        run: |
+          docker run -d --name backend -p 8080:8080 bitcoinai-backend
+          for i in $(seq 1 30); do
+            if curl -fsS localhost:8080/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs backend
+          exit 1

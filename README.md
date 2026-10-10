@@ -9,29 +9,39 @@ Backend de un proyecto universitario de **Estructuras de Datos**: un bot que ana
 
 > **Todo es simulado.** No opera con dinero real, no se conecta a ninguna cuenta de exchange y no usa claves de API. Los resultados no son asesoría financiera ni garantizan ganancias.
 
-Está escrito en **Java 21 sin frameworks**:
-- **HTTP:** el servidor es `com.sun.net.httpserver` y el cliente `java.net.http.HttpClient`.
-- **JSON:** lector y escritor propios.
-- **Estructuras:** listas, colas y pilas implementadas a mano con nodos enlazados.
-- **Dependencias:** la única externa es JUnit 5, solo para las pruebas.
+Está escrito en **Python 3.13 con FastAPI**. El frontend (TypeScript) está en otro repositorio.
+- **HTTP:** el servidor es FastAPI sobre uvicorn y el cliente de Binance usa httpx.
+- **JSON:** el módulo estándar `json`.
+- **Estructuras:** listas, colas y pilas implementadas a mano con nodos enlazados (ver más abajo).
+- **Dependencias:** FastAPI, uvicorn y httpx; para desarrollar, pytest, ruff y mypy.
 
-## Compilar y ejecutar localmente
+La primera versión del proyecto estaba en Java 21; quedó guardada en la etiqueta `java-final`.
 
-Requisitos: JDK 21 y Maven 3.9 o superior.
+## Instalar y ejecutar localmente
+
+Requisito: Python 3.13.
+
+Crear el entorno virtual (una vez):
 
 ```bash
-mvn test
+py -3.13 -m venv .venv
+```
+
+En Linux o macOS es `python3.13 -m venv .venv`. Activarlo: `.venv\Scripts\activate` en Windows, `source .venv/bin/activate` en Linux o macOS. Después:
+
+```bash
+pip install -e ".[dev]"
 ```
 
 ```bash
-mvn package
+pytest
 ```
 
 ```bash
-java -jar target/backend-1.0.0-SNAPSHOT.jar
+python -m bitcoinai
 ```
 
-El servidor queda en `http://localhost:8080` (Ctrl+C lo apaga limpiamente). Para probarlo:
+El servidor queda en `http://localhost:8080` (Ctrl+C lo apaga). La documentación interactiva de FastAPI está en `http://localhost:8080/docs`. Para probarlo:
 
 ```bash
 curl localhost:8080/health
@@ -41,10 +51,20 @@ curl -N localhost:8080/api/stream
 
 En PowerShell usa `curl.exe` en lugar de `curl`. Para los POST con cuerpo JSON es más cómodo `Invoke-RestMethod`; ver [docs/API.md](docs/API.md).
 
-Hay una prueba manual que descarga velas reales de Binance; no corre con `mvn test`:
+Revisiones que también corre el CI:
 
 ```bash
-mvn test -Dtest=ClienteBinanceManualTest -Djunit.jupiter.conditions.deactivate=org.junit.*DisabledCondition
+ruff check
+```
+
+```bash
+mypy src
+```
+
+Hay una prueba manual que descarga velas reales de Binance (necesita internet); no corre con `pytest` a secas:
+
+```bash
+pytest -m manual -s
 ```
 
 ## Variables de entorno
@@ -59,16 +79,15 @@ Ninguna es obligatoria y ninguna es secreta.
 | `TTL_CACHE_SEGUNDOS` | `30` | Segundos que se guardan en caché el precio y las velas (`0` la desactiva). |
 | `SIMBOLO` | `BTCUSDT` | Par de mercado. |
 | `DATA_DIR` | `./data` | Carpeta donde se guarda la simulación (cartera, órdenes e historial). |
-| `MAX_STREAMS` | `50` | Conexiones simultáneas permitidas a `/api/stream`. |
-| `JAVA_OPTS` | `-Xmx256m -XX:+UseSerialGC` | Opciones de la JVM. Solo se aplica en la imagen Docker. |
+| `MAX_STREAMS` | `50` | Conexiones simultáneas permitidas a `/api/stream` (entre 1 y 10 000). |
 
 Si una variable tiene un valor inválido, el servidor no arranca y explica cuál es el problema.
 
 ## Docker
 
-La imagen se construye en dos etapas:
-- **Construcción:** Maven con Temurin 21 compila el jar.
-- **Ejecución:** imagen ligera con el JRE 21 sobre Alpine. Solo lleva el jar y corre con un usuario sin privilegios.
+La imagen se construye en dos etapas, las dos sobre `python:3.13-slim`:
+- **Construcción:** instala las dependencias y el proyecto en un entorno virtual.
+- **Ejecución:** solo copia ese entorno virtual (sin pip ni el código fuente) y corre con un usuario sin privilegios.
 
 ```bash
 docker build -t bitcoin-backend .
@@ -112,7 +131,7 @@ Railway detecta el `Dockerfile` y construye la imagen.
 
 ## Endpoints
 
-Detalle, parámetros y ejemplos reales en [docs/API.md](docs/API.md).
+Detalle, parámetros y ejemplos en [docs/API.md](docs/API.md).
 
 | Método y ruta | Qué hace |
 | --- | --- |
@@ -137,32 +156,35 @@ Detalle, parámetros y ejemplos reales en [docs/API.md](docs/API.md).
 
 ## Estructuras de datos
 
-Están en `com.bitcoinai.backend.estructuras`:
-- Son genéricas e implementadas a mano con nodos enlazados, sin `ArrayList`, `LinkedList`, `ArrayDeque`, `Stack` ni `Queue` del JDK.
+Están en `src/bitcoinai/estructuras`:
+- Son genéricas e implementadas a mano con nodos enlazados. La lógica del proyecto no usa `list`, `collections.deque`, `queue.Queue` ni `heapq` como estructuras; las listas de Python solo aparecen en la frontera JSON (lo que entra y sale por HTTP o a disco). Una prueba revisa el código de las estructuras con el árbol sintáctico para asegurarlo.
 - Cada operación documenta su complejidad. La tabla completa está en [docs/ESTRUCTURAS.md](docs/ESTRUCTURAS.md).
 
 | Estructura | Dónde se usa | Por qué esa estructura |
 | --- | --- | --- |
-| **ListaDoble** | Velas de mercado (`ClienteBinance`, indicadores, `Backtester`) | Las velas nuevas entran por el final y las viejas salen por el inicio en O(1) (`conservarUltimos` para las ventanas de SMA, Bollinger y volatilidad). Se recorre hacia atrás para unir los lotes de Binance y para tomar los valores más recientes (`Series.ultimos`). |
-| **ListaDoble** | Clientes de `/api/stream` (`Publicador`) | Cada cliente guarda su nodo; al desconectarse se quita con `eliminarNodo` en O(1), sin recorrer la lista. |
-| **Cola** | Órdenes pendientes (`LibroDeOrdenes`) | Se ejecutan en orden de llegada (FIFO). Cancelar una del medio reconstruye la cola en O(n) conservando el orden de las demás. |
+| **ListaDoble** | Velas de mercado (`ClienteBinance`, indicadores, `Backtester`) | Las velas nuevas entran por el final y las viejas salen por el inicio en O(1) (`conservar_ultimos` para las ventanas de SMA, Bollinger y volatilidad). Se recorre hacia atrás para unir los lotes de Binance y para tomar los valores más recientes (`ultimos`). |
+| **ListaDoble** | Clientes de `/api/stream` (`Publicador`) | Cada cliente guarda su nodo; al desconectarse se quita con `eliminar_nodo` en O(1), sin recorrer la lista. |
+| **Cola** | Órdenes pendientes (`LibroDeOrdenes`) y buzón de cada cliente de `/api/stream` | Se atienden en orden de llegada (FIFO). Cancelar una orden del medio reconstruye la cola en O(n) conservando el orden de las demás. |
 | **Pila** | Historial de eventos y de decisiones (`LibroDeOrdenes`, `Backtester`) | El evento más reciente queda arriba (LIFO). Otra pila de ids permite deshacer la última orden, y luego la anterior. |
 | **Lista** | Registro de órdenes terminadas y operaciones cerradas del backtest | Se agregan al final en O(1) y se recorren para mostrar y calcular métricas. |
 
+Las estrategias recuerdan el estado de sus indicadores entre velas (memoria incremental), así que un backtest cuesta O(n) y no O(n²).
+
 ## Estructura del código
 
-Paquetes bajo `com.bitcoinai.backend`:
+Paquetes bajo `src/bitcoinai`:
 
 | Paquete | Contenido |
 | --- | --- |
 | `estructuras` | Lista, ListaDoble, Cola y Pila |
 | `modelo` | Vela e Intervalo |
-| `util` | Lector y escritor de JSON |
 | `mercado` | Cliente de Binance, caché y validación de velas |
-| `indicadores` | Indicadores técnicos |
+| `indicadores` | Indicadores técnicos y sus versiones incrementales |
 | `estrategia` | Estrategias, pronóstico, backtest y validación |
 | `simulacion` | Cartera, libro de órdenes y bot |
 | `persistencia` | Guardado en archivos JSON |
-| `api` | Servidor HTTP, enrutador, filtros, endpoints y SSE |
+| `api` | Aplicación FastAPI, middlewares, endpoints y SSE |
 
-En cada push y pull request, GitHub Actions ejecuta `mvn -B test` con Java 21 (`.github/workflows/ci.yml`).
+Las pruebas están en `tests/`, con la misma organización.
+
+En cada push y pull request, GitHub Actions corre `ruff check`, `mypy src` y `pytest` con Python 3.13, y después construye la imagen Docker y comprueba que `/health` responda (`.github/workflows/ci.yml`).

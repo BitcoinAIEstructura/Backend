@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
@@ -21,6 +22,14 @@ URL_BASE_POR_DEFECTO: Final = "https://api.binance.com"
 
 LIMITE_POR_PETICION: Final = 1000
 """Máximo de velas que Binance entrega en una sola petición."""
+
+MENSAJE_REGION_RESTRINGIDA: Final = (
+    "Binance no está disponible desde esta región; cambia la región del servicio o la URL base")
+"""Mensaje cuando Binance responde 451 porque la región del servidor está restringida."""
+
+_HTTP_REGION_RESTRINGIDA: Final = 451
+
+LOG = logging.getLogger("bitcoinai.mercado")
 
 _SIMBOLO_VALIDO: Final = re.compile(r"[A-Z0-9]{2,20}")
 
@@ -152,7 +161,11 @@ class ClienteBinance:
         return convertir_klines(self._pedir("/api/v3/klines", parametros))
 
     def _pedir(self, ruta: str, parametros: dict[str, str | int]) -> str:
-        """GET que devuelve el cuerpo si la respuesta es 200, con reintentos ante fallos de red o 5xx."""
+        """GET que devuelve el cuerpo si la respuesta es 200, con reintentos ante fallos de red o 5xx.
+
+        Los 4xx no se reintentan porque repetir la misma petición no los arregla. Un
+        451 (región restringida) se registra y da ``MENSAJE_REGION_RESTRINGIDA``.
+        """
         ultimo_error: MercadoError | None = None
         for intento in range(self._reintentos + 1):
             if intento > 0 and self._pausa_reintento > 0:
@@ -170,6 +183,10 @@ class ClienteBinance:
                 continue
             if respuesta.status_code == 200:
                 return respuesta.text
+            if respuesta.status_code == _HTTP_REGION_RESTRINGIDA:
+                # Binance bloquea algunas regiones (por ejemplo servidores en EE. UU.). Reintentar no sirve.
+                LOG.warning("%s (HTTP 451 desde %s)", MENSAJE_REGION_RESTRINGIDA, self.url_base)
+                raise MercadoError(MENSAJE_REGION_RESTRINGIDA)
             ultimo_error = MercadoError(_mensaje_de_error(respuesta.status_code, respuesta.text))
             if respuesta.status_code < 500:
                 raise ultimo_error

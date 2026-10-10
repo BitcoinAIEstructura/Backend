@@ -6,7 +6,13 @@ import httpx
 import pytest
 
 from bitcoinai.estructuras import ListaDoble
-from bitcoinai.mercado import ClienteBinance, MercadoError, convertir_klines, resolver_url_base
+from bitcoinai.mercado import (
+    MENSAJE_REGION_RESTRINGIDA,
+    ClienteBinance,
+    MercadoError,
+    convertir_klines,
+    resolver_url_base,
+)
 from bitcoinai.modelo import Intervalo, Vela
 
 DIA = Intervalo.D1.milisegundos
@@ -189,6 +195,17 @@ def test_error_4xx_incluye_el_mensaje_de_binance_y_no_se_reintenta() -> None:
         binance.cliente().obtener_velas("NOEXISTE", Intervalo.D1, 5)
     assert str(error.value) == "Binance respondió HTTP 400: Invalid symbol."
     assert len(binance.peticiones) == 1
+
+
+def test_error_451_explica_la_region_restringida_y_lo_registra(caplog: pytest.LogCaptureFixture) -> None:
+    cuerpo = '{"code":0,"msg":"Service unavailable from a restricted location"}'
+    binance = BinanceFalso(lambda p: httpx.Response(451, text=cuerpo))
+    with pytest.raises(MercadoError) as error:
+        binance.cliente().obtener_precio_actual("BTCUSDT")
+    assert str(error.value) == MENSAJE_REGION_RESTRINGIDA
+    assert MENSAJE_REGION_RESTRINGIDA.startswith("Binance no está disponible desde esta región")
+    assert len(binance.peticiones) == 1  # reintentar no sirve
+    assert "HTTP 451 desde http://binance.falso" in caplog.text
 
 
 def test_error_5xx_se_reintenta_una_vez_y_si_funciona_devuelve_el_dato() -> None:
