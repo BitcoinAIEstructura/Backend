@@ -4,7 +4,9 @@ from bitcoinai.usuarios.validacion import (
     DatoInvalidoError,
     TipoDocumento,
     leer_tipo_documento,
+    normalizar_correo,
     normalizar_documento,
+    normalizar_nombre,
     normalizar_telefono,
 )
 
@@ -61,3 +63,37 @@ def test_telefono_invalido(malo: str) -> None:
     with pytest.raises(DatoInvalidoError) as error:
         normalizar_telefono(malo)
     assert error.value.campo == "telefono"
+
+
+@pytest.mark.parametrize(("escrito", "esperado"), [
+    ("  Ana.Perez@Gmail.COM ", "ana.perez@gmail.com"),
+    ("santi+bitcoin@uni.edu.co", "santi+bitcoin@uni.edu.co"),
+])
+def test_correo_valido(escrito: str, esperado: str) -> None:
+    assert normalizar_correo(escrito) == esperado
+
+
+@pytest.mark.parametrize("malo", ["", "ana", "ana@", "@gmail.com", "ana@gmail", "ana..p@gmail.com", "a b@c.co",
+                                  "ana@-gmail.com", "x" * 65 + "@gmail.com"])
+def test_correo_invalido(malo: str) -> None:
+    with pytest.raises(DatoInvalidoError, match="El correo no es válido"):
+        normalizar_correo(malo)
+
+
+@pytest.mark.parametrize(("escrito", "esperado"), [
+    ("María   José", "María José"), ("Ñúñez", "Ñúñez"), ("O'Connor", "O'Connor"), ("Gómez-Pérez", "Gómez-Pérez"),
+])
+def test_nombre_valido(escrito: str, esperado: str) -> None:
+    assert normalizar_nombre(escrito) == esperado
+
+
+def test_nombre_invalido() -> None:
+    with pytest.raises(DatoInvalidoError, match="entre 2 y 50"):
+        normalizar_nombre("A")
+    with pytest.raises(DatoInvalidoError, match="solo puede tener letras") as error:
+        normalizar_nombre("Ana3", "apellido")
+    assert error.value.campo == "apellido"
+    assert error.value.mensaje.startswith("El apellido")
+    for malo in ("<script>", "Ana--Luz", "Ana_Luz"):
+        with pytest.raises(DatoInvalidoError):
+            normalizar_nombre(malo)

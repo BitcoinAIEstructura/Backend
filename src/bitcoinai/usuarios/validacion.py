@@ -74,3 +74,29 @@ def normalizar_telefono(telefono: str) -> str:
         return limpio
     raise DatoInvalidoError("telefono",
                             "Escribe un celular colombiano de 10 dígitos o un número con indicativo (+57, +1…)")
+
+
+_CORREO = re.compile(r"[a-z0-9._%+\-]{1,64}@(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}")
+_NOMBRE = re.compile(r"[^\W\d_]+(?:[ '\-][^\W\d_]+)*")
+
+
+def normalizar_correo(correo: str) -> str:
+    """Correo en minúsculas y sin espacios alrededor; máximo 254 caracteres."""
+    limpio = correo.strip().lower()
+    if len(limpio) > 254 or not _CORREO.fullmatch(limpio) or ".." in limpio:
+        raise DatoInvalidoError("correo", "El correo no es válido")
+    return limpio
+
+
+def normalizar_nombre(texto: str, campo: str = "nombre") -> str:
+    """Nombre o apellido: letras (con tildes y ñ), espacios, apóstrofo o guion; de 2 a 50 caracteres.
+
+    Los espacios repetidos se reducen a uno ("María   José" → "María José").
+    """
+    limpio = " ".join(texto.split())
+    que = "El nombre" if campo == "nombre" else "El apellido"
+    if not 2 <= len(limpio) <= 50:
+        raise DatoInvalidoError(campo, f"{que} debe tener entre 2 y 50 caracteres")
+    if not _NOMBRE.fullmatch(limpio):
+        raise DatoInvalidoError(campo, f"{que} solo puede tener letras, espacios, apóstrofo o guion")
+    return limpio
