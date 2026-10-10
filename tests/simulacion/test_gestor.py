@@ -69,3 +69,22 @@ def test_carga_concurrente_crea_una_sola_simulacion(gestor: GestorSimulaciones) 
     for hilo in hilos:
         hilo.join()
     assert len({id(libro) for libro in libros}) == 1
+
+
+def test_limite_de_bots_a_la_vez(fuente: FuenteFalsa) -> None:
+    from bitcoinai.simulacion import ConfiguracionBot, OperacionInvalidaError
+
+    gestor = GestorSimulaciones(fuente, "BTCUSDT", maximo_bots=1)
+    lento = ConfiguracionBot(segundos_entre_ciclos=3600)
+    try:
+        assert gestor.iniciar_bot(1, lento).activo
+        with pytest.raises(OperacionInvalidaError, match="ya está en marcha"):
+            gestor.iniciar_bot(1, lento)
+        with pytest.raises(OperacionInvalidaError, match="máximo 1"):
+            gestor.iniciar_bot(2, lento)
+        assert gestor.bots_activos() == 1
+        gestor.bot(1).detener()
+        assert gestor.iniciar_bot(2, lento).activo
+    finally:
+        gestor.detener_todos()
+    assert gestor.bots_activos() == 0

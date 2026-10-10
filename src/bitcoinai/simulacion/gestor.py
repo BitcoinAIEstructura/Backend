@@ -13,10 +13,11 @@ from dataclasses import dataclass
 
 from bitcoinai.estrategia import Estrategia, EstrategiaCombinada
 from bitcoinai.mercado import FuenteDeMercado
-from bitcoinai.simulacion.bot import BotSimulado
+from bitcoinai.simulacion.bot import BotSimulado, ConfiguracionBot, EstadoBot
 from bitcoinai.simulacion.cartera import SALDO_INICIAL_POR_DEFECTO, Cartera
 from bitcoinai.simulacion.interfaces import AlmacenSimulacion, PublicadorEventos, SinPublicar
 from bitcoinai.simulacion.libro import LibroDeOrdenes
+from bitcoinai.simulacion.modelo import OperacionInvalidaError
 
 MAXIMO_BOTS_POR_DEFECTO = 20
 """Bots encendidos a la vez como máximo (cada uno consulta el mercado periódicamente)."""
@@ -35,13 +36,15 @@ class GestorSimulaciones:
                  crear_almacen: Callable[[int], AlmacenSimulacion] | None = None,
                  crear_publicador: Callable[[int], PublicadorEventos] | None = None,
                  crear_estrategia: Callable[[], Estrategia] = EstrategiaCombinada,
-                 saldo_inicial: float = SALDO_INICIAL_POR_DEFECTO) -> None:
+                 saldo_inicial: float = SALDO_INICIAL_POR_DEFECTO,
+                 maximo_bots: int = MAXIMO_BOTS_POR_DEFECTO) -> None:
         self._fuente = fuente
         self._simbolo = simbolo
         self._crear_almacen = crear_almacen
         self._crear_publicador = crear_publicador or (lambda _usuario: SinPublicar())
         self._crear_estrategia = crear_estrategia
         self._saldo_inicial = saldo_inicial
+        self.maximo_bots = maximo_bots
         self._simulaciones: dict[int, SimulacionUsuario] = {}
         self._candado = threading.Lock()
 
@@ -72,3 +75,31 @@ class GestorSimulaciones:
     def cantidad_cargadas(self) -> int:
         with self._candado:
             return len(self._simulaciones)
+
+    # ---------- bots ----------
+
+    def bots_activos(self) -> int:
+        """Cuántos bots están en marcha ahora. Complejidad: O(u) con u usuarios cargados."""
+        with self._candado:
+            return sum(1 for s in self._simulaciones.values() if s.bot.estado().activo)
+
+    def iniciar_bot(self, usuario_id: int, configuracion: ConfiguracionBot) -> EstadoBot:
+        """Enciende el bot del usuario si no se llegó al máximo de bots a la vez.
+
+        Raises:
+            OperacionInvalidaError: si ya hay ``maximo_bots`` en marcha, o el suyo ya lo estaba.
+        """
+        bot = self.bot(usuario_id)
+        with self._candado:
+            activos = sum(1 for s in self._simulaciones.values() if s.bot.estado().activo)
+            if not bot.estado().activo and activos >= self.maximo_bots:
+                raise OperacionInvalidaError(
+                    f"Hay demasiados bots en marcha (máximo {self.maximo_bots}); intenta más tarde")
+            return bot.iniciar(configuracion)
+
+    def detener_todos(self) -> None:
+        """Apaga todos los bots (al cerrar el servidor)."""
+        with self._candado:
+            simulaciones = tuple(self._simulaciones.values())
+        for simulacion in simulaciones:
+            simulacion.bot.detener()
