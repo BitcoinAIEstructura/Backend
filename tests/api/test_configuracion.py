@@ -11,6 +11,7 @@ def test_valores_por_defecto() -> None:
     assert c.ttl_cache_segundos == 30
     assert c.simbolo == "BTCUSDT"
     assert c.max_streams == 50
+    assert c.max_bots == 20
     assert c.data_dir == "./data"
     assert c.ruta_base_datos == "./data/bitcoinai.db"
     assert (c.cookie_segura, c.confiar_proxy) == (False, False)
@@ -75,3 +76,9 @@ def test_base_de_datos_cookie_y_proxy() -> None:
     assert Configuracion.desde_entorno({"BASE_DATOS": "otra.db"}).ruta_base_datos == "otra.db"
     with pytest.raises(ValueError, match="COOKIE_SEGURA debe ser true o false"):
         Configuracion.desde_entorno({"COOKIE_SEGURA": "quizas"})
+
+
+def test_max_bots() -> None:
+    assert Configuracion.desde_entorno({"MAX_BOTS": "3"}).max_bots == 3
+    with pytest.raises(ValueError, match="MAX_BOTS debe ser un número entero entre 1 y 1000"):
+        Configuracion.desde_entorno({"MAX_BOTS": "0"})

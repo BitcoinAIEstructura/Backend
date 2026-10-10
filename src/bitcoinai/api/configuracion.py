@@ -26,6 +26,7 @@ class Configuracion:
         ttl_cache_segundos: segundos de caché de los datos de mercado (``TTL_CACHE_SEGUNDOS``, por defecto 30).
         simbolo: par de mercado (``SIMBOLO``, por defecto BTCUSDT).
         max_streams: conexiones simultáneas a /api/stream (``MAX_STREAMS``, por defecto 50).
+        max_bots: bots simulados encendidos a la vez entre todos los usuarios (``MAX_BOTS``, por defecto 20).
         data_dir: carpeta donde se guarda la simulación (``DATA_DIR``, por defecto ``./data``).
         base_datos: archivo SQLite de usuarios y sesiones (``BASE_DATOS``, por defecto
             ``<DATA_DIR>/bitcoinai.db``).
@@ -41,6 +42,7 @@ class Configuracion:
     ttl_cache_segundos: int = 30
     simbolo: str = "BTCUSDT"
     max_streams: int = 50
+    max_bots: int = 20
     data_dir: str = "./data"
     base_datos: str = ""
     cookie_segura: bool = False
@@ -68,6 +70,7 @@ class Configuracion:
             ttl_cache_segundos=_entero(variables, "TTL_CACHE_SEGUNDOS", 30, 0, 86_400),
             simbolo=simbolo,
             max_streams=_entero(variables, "MAX_STREAMS", 50, 1, 10_000),
+            max_bots=_entero(variables, "MAX_BOTS", 20, 1, 1000),
             data_dir=_texto(variables, "DATA_DIR", "./data"),
             base_datos=_texto(variables, "BASE_DATOS", ""),
             cookie_segura=_booleano(variables, "COOKIE_SEGURA"),
