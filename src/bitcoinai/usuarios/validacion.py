@@ -50,3 +50,27 @@ def leer_tipo_documento(texto: str) -> TipoDocumento:
         return TipoDocumento[texto.strip().upper()]
     except KeyError:
         raise DatoInvalidoError("tipoDocumento", "El tipo de documento debe ser CC o CE") from None
+
+
+_CELULAR_COLOMBIA = re.compile(r"3\d{9}")
+_INTERNACIONAL = re.compile(r"\+[1-9]\d{7,14}")
+
+
+def normalizar_telefono(telefono: str) -> str:
+    """Teléfono en formato internacional E.164 ("+573001234567").
+
+    - Un celular colombiano de 10 dígitos que empieza por 3 se acepta sin indicativo
+      ("300 123 4567" → "+573001234567").
+    - Cualquier otro número debe llevar el indicativo del país con "+" (de 8 a 15 dígitos).
+    """
+    limpio = re.sub(r"[\s.\-()]", "", telefono)
+    if limpio.startswith("00"):
+        limpio = "+" + limpio[2:]
+    if _CELULAR_COLOMBIA.fullmatch(limpio):
+        return "+57" + limpio
+    if _INTERNACIONAL.fullmatch(limpio):
+        if limpio.startswith("+57") and not _CELULAR_COLOMBIA.fullmatch(limpio[3:]):
+            raise DatoInvalidoError("telefono", "Un celular colombiano tiene 10 dígitos y empieza por 3")
+        return limpio
+    raise DatoInvalidoError("telefono",
+                            "Escribe un celular colombiano de 10 dígitos o un número con indicativo (+57, +1…)")

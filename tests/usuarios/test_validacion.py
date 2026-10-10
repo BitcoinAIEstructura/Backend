@@ -5,6 +5,7 @@ from bitcoinai.usuarios.validacion import (
     TipoDocumento,
     leer_tipo_documento,
     normalizar_documento,
+    normalizar_telefono,
 )
 
 CC, CE = TipoDocumento.CC, TipoDocumento.CE
@@ -41,3 +42,22 @@ def test_tipo_de_documento() -> None:
     assert leer_tipo_documento("CE") is CE
     with pytest.raises(DatoInvalidoError, match="CC o CE"):
         leer_tipo_documento("PASAPORTE")
+
+
+@pytest.mark.parametrize(("escrito", "esperado"), [
+    ("3001234567", "+573001234567"),
+    ("300 123 4567", "+573001234567"),
+    ("+57 300-123-4567", "+573001234567"),
+    ("0057 3001234567", "+573001234567"),
+    ("+1 (305) 555-0123", "+13055550123"),
+    ("+34 612 345 678", "+34612345678"),
+])
+def test_telefono_valido(escrito: str, esperado: str) -> None:
+    assert normalizar_telefono(escrito) == esperado
+
+
+@pytest.mark.parametrize("malo", ["", "12345", "6012345678", "+57 601 234 5678", "+0123456789", "300123456a"])
+def test_telefono_invalido(malo: str) -> None:
+    with pytest.raises(DatoInvalidoError) as error:
+        normalizar_telefono(malo)
+    assert error.value.campo == "telefono"
