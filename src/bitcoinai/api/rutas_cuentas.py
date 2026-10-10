@@ -1,7 +1,10 @@
-"""Endpoints de cuentas: registro, inicio y cierre de sesión.
+"""Endpoints de cuentas: registro, sesión y centro de seguridad.
 
 - POST /api/cuentas/registro, GET /api/cuentas/yo
 - POST /api/sesion, POST /api/sesion/codigo, DELETE /api/sesion
+- Verificación en dos pasos: POST /api/cuentas/dos-pasos, …/confirmar, …/desactivar, …/codigos
+- GET /api/cuentas/sesiones, DELETE /api/cuentas/sesiones/{id}, POST /api/cuentas/sesiones/cerrar-otras
+- GET /api/cuentas/actividad, POST /api/cuentas/contrasena
 
 La sesión viaja en una cookie ``HttpOnly`` (el JavaScript de la página no la
 puede leer, así un script inyectado no puede robarla) y ``SameSite=Strict`` (no
@@ -50,6 +53,20 @@ class CuerpoCodigo(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     codigo: str = Field(max_length=20)
+
+
+class CuerpoDesactivar(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    contrasena: str = Field(max_length=256)
+    codigo: str = Field(max_length=20)
+
+
+class CuerpoContrasena(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", populate_by_name=True)
+
+    contrasena_actual: str = Field(alias="contrasenaActual", max_length=256)
+    contrasena_nueva: str = Field(alias="contrasenaNueva", max_length=256)
 
 
 def usuario_a_json(usuario: Usuario) -> dict[str, Any]:
@@ -148,4 +165,69 @@ def crear_rutas_cuentas(servicio: ServicioCuentas, config: Configuracion) -> API
         usuario, _ = sesion_de(peticion, servicio, cookies)
         return {"usuario": usuario_a_json(usuario)}
 
+    # ---------- centro de seguridad ----------
+
+    @rutas.post("/api/cuentas/dos-pasos")
+    def iniciar_dos_pasos(peticion: Request) -> dict[str, Any]:
+        """Secreto nuevo y enlace ``otpauth://`` para mostrar como código QR."""
+        usuario, _ = sesion_de(peticion, servicio, cookies)
+        configuracion = servicio.iniciar_dos_pasos(usuario.id)
+        return {"secreto": configuracion.secreto, "uri": configuracion.uri}
+
+    @rutas.post("/api/cuentas/dos-pasos/confirmar")
+    def confirmar_dos_pasos(cuerpo: CuerpoCodigo, peticion: Request) -> dict[str, Any]:
+        """Activa la verificación con el primer código de la app; devuelve los códigos de respaldo."""
+        usuario, _ = sesion_de(peticion, servicio, cookies)
+        codigos = servicio.confirmar_dos_pasos(usuario.id, cuerpo.codigo, cliente_de(peticion, config))
+        return {"codigosRespaldo": list(codigos)}
+
+    @rutas.post("/api/cuentas/dos-pasos/desactivar", status_code=204)
+    def desactivar_dos_pasos(cuerpo: CuerpoDesactivar, peticion: Request) -> None:
+        usuario, _ = sesion_de(peticion, servicio, cookies)
+        servicio.desactivar_dos_pasos(usuario.id, cuerpo.contrasena, cuerpo.codigo, cliente_de(peticion, config))
+
+    @rutas.post("/api/cuentas/dos-pasos/codigos")
+    def regenerar_codigos(cuerpo: CuerpoCodigo, peticion: Request) -> dict[str, Any]:
+        """Diez códigos de respaldo nuevos; los anteriores dejan de servir."""
+        usuario, _ = sesion_de(peticion, servicio, cookies)
+        codigos = servicio.regenerar_codigos(usuario.id, cuerpo.codigo, cliente_de(peticion, config))
+        return {"codigosRespaldo": list(codigos)}
+
+    @rutas.get("/api/cuentas/sesiones")
+    def sesiones(peticion: Request) -> dict[str, Any]:
+        """Sesiones abiertas (dispositivos), la más reciente primero; ``actual`` marca esta."""
+        usuario, actual = sesion_de(peticion, servicio, cookies)
+        return {"sesiones": [sesion_a_json(s, s.id == actual.id) for s in servicio.sesiones_activas(usuario.id)]}
+
+    @rutas.delete("/api/cuentas/sesiones/{sesion_id}", status_code=204)
+    def cerrar_una(sesion_id: int, peticion: Request) -> None:
+        usuario, _ = sesion_de(peticion, servicio, cookies)
+        servicio.cerrar_otra_sesion(usuario.id, sesion_id, cliente_de(peticion, config))
+
+    @rutas.post("/api/cuentas/sesiones/cerrar-otras")
+    def cerrar_otras(peticion: Request) -> dict[str, Any]:
+        """Cierra la sesión en todos los demás dispositivos."""
+        usuario, actual = sesion_de(peticion, servicio, cookies)
+        return {"cerradas": servicio.cerrar_otras_sesiones(usuario.id, actual.id, cliente_de(peticion, config))}
+
+    @rutas.get("/api/cuentas/actividad")
+    def actividad(peticion: Request, limite: int = 50) -> dict[str, Any]:
+        """Actividad de seguridad reciente (de 1 a 200 eventos)."""
+        usuario, _ = sesion_de(peticion, servicio, cookies)
+        eventos = servicio.actividad_reciente(usuario.id, max(1, min(limite, 200)))
+        return {"eventos": [{"momento": e.momento, "tipo": e.tipo.name, "descripcion": e.tipo.value, "ip": e.ip,
+                             "detalle": e.detalle} for e in eventos]}
+
+    @rutas.post("/api/cuentas/contrasena", status_code=204)
+    def cambiar_contrasena(cuerpo: CuerpoContrasena, peticion: Request) -> None:
+        """Cambia la contraseña y cierra las demás sesiones."""
+        usuario, actual = sesion_de(peticion, servicio, cookies)
+        servicio.cambiar_contrasena(usuario.id, cuerpo.contrasena_actual, cuerpo.contrasena_nueva, actual.id,
+                                    cliente_de(peticion, config))
+
     return rutas
+
+
+def sesion_a_json(sesion: Sesion, actual: bool) -> dict[str, Any]:
+    return {"id": sesion.id, "actual": actual, "ip": sesion.ip, "agente": sesion.agente,
+            "creadaEn": sesion.creada_en, "ultimaActividad": sesion.ultima_actividad, "expiraEn": sesion.expira_en}
