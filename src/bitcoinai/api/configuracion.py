@@ -14,7 +14,10 @@ _SIMBOLO_VALIDO = re.compile(r"[A-Z0-9]{2,20}")
 
 @dataclass(frozen=True, slots=True)
 class Configuracion:
-    """Configuración del backend. No contiene secretos: todo lo que usa es público.
+    """Configuración del backend.
+
+    El único secreto (``CLAVE_CIFRADO``) no se guarda aquí: lo lee
+    ``seguridad.claves`` directamente, para que nunca aparezca en registros.
 
     Atributos:
         puerto: puerto HTTP (``PORT``, por defecto 8080; Railway lo inyecta).
@@ -24,6 +27,12 @@ class Configuracion:
         simbolo: par de mercado (``SIMBOLO``, por defecto BTCUSDT).
         max_streams: conexiones simultáneas a /api/stream (``MAX_STREAMS``, por defecto 50).
         data_dir: carpeta donde se guarda la simulación (``DATA_DIR``, por defecto ``./data``).
+        base_datos: archivo SQLite de usuarios y sesiones (``BASE_DATOS``, por defecto
+            ``<DATA_DIR>/bitcoinai.db``).
+        cookie_segura: si la cookie de sesión lleva ``Secure`` (``COOKIE_SEGURA``; ponla en
+            ``true`` cuando haya HTTPS, como en Railway).
+        confiar_proxy: si se cree el encabezado ``X-Forwarded-For`` para saber la IP real
+            (``CONFIAR_PROXY``; solo detrás de un proxy propio, como Railway o el frontend).
     """
 
     puerto: int = 8080
@@ -33,6 +42,13 @@ class Configuracion:
     simbolo: str = "BTCUSDT"
     max_streams: int = 50
     data_dir: str = "./data"
+    base_datos: str = ""
+    cookie_segura: bool = False
+    confiar_proxy: bool = False
+
+    @property
+    def ruta_base_datos(self) -> str:
+        return self.base_datos or f"{self.data_dir.rstrip('/')}/bitcoinai.db"
 
     @classmethod
     def desde_entorno(cls, entorno: Mapping[str, str] | None = None) -> Configuracion:
@@ -53,6 +69,9 @@ class Configuracion:
             simbolo=simbolo,
             max_streams=_entero(variables, "MAX_STREAMS", 50, 1, 10_000),
             data_dir=_texto(variables, "DATA_DIR", "./data"),
+            base_datos=_texto(variables, "BASE_DATOS", ""),
+            cookie_segura=_booleano(variables, "COOKIE_SEGURA"),
+            confiar_proxy=_booleano(variables, "CONFIAR_PROXY"),
         )
 
 
@@ -72,3 +91,12 @@ def _entero(variables: Mapping[str, str], nombre: str, por_defecto: int, minimo:
     if numero is None or not minimo <= numero <= maximo:
         raise ValueError(f"{nombre} debe ser un número entero entre {minimo} y {maximo}: {valor}")
     return numero
+
+
+def _booleano(variables: Mapping[str, str], nombre: str) -> bool:
+    valor = variables.get(nombre, "").strip().lower()
+    if valor in ("", "false", "0", "no"):
+        return False
+    if valor in ("true", "1", "si", "sí"):
+        return True
+    raise ValueError(f"{nombre} debe ser true o false: {valor}")

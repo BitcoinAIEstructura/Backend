@@ -12,16 +12,33 @@ from fastapi import FastAPI
 
 from bitcoinai.api import Configuracion, crear_app
 from bitcoinai.api.publicador import Publicador
+from bitcoinai.basedatos import BaseDatos
+from bitcoinai.basedatos.migraciones import migrar
 from bitcoinai.estrategia import EstrategiaCombinada
 from bitcoinai.mercado import CacheMercado, ClienteBinance
 from bitcoinai.persistencia import AlmacenArchivos
+from bitcoinai.seguridad.cifrado import Cifrador
+from bitcoinai.seguridad.claves import cargar_clave
+from bitcoinai.seguridad.contrasenas import HashContrasenas
 from bitcoinai.simulacion import BotSimulado, Cartera, LibroDeOrdenes
+from bitcoinai.usuarios.servicio import ServicioCuentas
 
 LOG = logging.getLogger("bitcoinai")
 
 
-def construir(config: Configuracion) -> FastAPI:
-    """Arma la aplicación real: Binance con caché, la simulación y todos los endpoints.
+def construir_cuentas(config: Configuracion, hasher: HashContrasenas | None = None) -> ServicioCuentas:
+    """Base de datos (con las migraciones al día), clave de cifrado y servicio de cuentas."""
+    bd = BaseDatos(config.ruta_base_datos)
+    aplicadas = migrar(bd)
+    if aplicadas:
+        LOG.info("Base de datos %s: %d migraciones aplicadas", config.ruta_base_datos, aplicadas)
+    cuentas = ServicioCuentas(bd, Cifrador(cargar_clave(config.data_dir)), hasher or HashContrasenas())
+    cuentas.sesiones.limpiar_vencidos()
+    return cuentas
+
+
+def construir(config: Configuracion, hasher: HashContrasenas | None = None) -> FastAPI:
+    """Arma la aplicación real: Binance con caché, cuentas, la simulación y todos los endpoints.
 
     El bot queda creado pero detenido; se inicia con POST /api/bot/iniciar. La
     simulación se recupera de ``DATA_DIR`` (si hay algo guardado) y se guarda
@@ -35,7 +52,7 @@ def construir(config: Configuracion) -> FastAPI:
     libro.usar_publicador(publicador)
     bot = BotSimulado(libro, fuente, EstrategiaCombinada(), config.simbolo)
     bot.usar_publicador(publicador)
-    return crear_app(config, fuente, libro, bot, publicador)
+    return crear_app(config, fuente, libro, bot, publicador, construir_cuentas(config, hasher))
 
 
 def main() -> None:

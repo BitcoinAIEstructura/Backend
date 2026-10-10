@@ -1,6 +1,7 @@
 """Errores de la API y su conversión a JSON."""
 
 import logging
+import math
 from collections.abc import Mapping
 from typing import Any
 
@@ -9,9 +10,30 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 from starlette.exceptions import HTTPException
 
-from bitcoinai.api.respuestas import respuesta_error
+from bitcoinai.api.respuestas import RespuestaJson, respuesta_error
 from bitcoinai.mercado import MercadoError
 from bitcoinai.simulacion import OperacionInvalidaError, OrdenNoEncontradaError
+from bitcoinai.usuarios.servicio import (
+    CodigoInvalidoError,
+    CredencialesInvalidasError,
+    CuentaError,
+    DemasiadosIntentosError,
+    DesafioVencidoError,
+    OperacionCuentaError,
+    RegistroRechazadoError,
+    SesionInvalidaError,
+)
+from bitcoinai.usuarios.validacion import DatoInvalidoError
+
+CODIGOS_CUENTA: tuple[tuple[type[CuentaError], int], ...] = (
+    (RegistroRechazadoError, 409),
+    (OperacionCuentaError, 409),
+    (CredencialesInvalidasError, 401),
+    (CodigoInvalidoError, 401),
+    (DesafioVencidoError, 401),
+    (SesionInvalidaError, 401),
+)
+"""Código HTTP de cada error de las cuentas (los demás, 400)."""
 
 LOG = logging.getLogger("bitcoinai.api")
 
@@ -34,6 +56,9 @@ def registrar_manejadores(app: FastAPI) -> None:
     - ``ApiError`` → su código y mensaje (400, 404, 409…).
     - ``MercadoError`` → 502 "Fuente de mercado no disponible" (el detalle va solo al registro).
     - ``OrdenNoEncontradaError`` → 404; ``OperacionInvalidaError`` → 409.
+    - Cuentas: dato inválido → 400 con ``campo``; correo o documento repetido → 409;
+      credenciales, código o sesión inválidos → 401; demasiados intentos → 429 con
+      ``Retry-After``.
     - 404 y 405 de FastAPI → mensajes en español; el 405 incluye el encabezado ``Allow``.
     - Validaciones de FastAPI y pydantic (por defecto 422) → 400 con el motivo en español.
 
@@ -68,6 +93,20 @@ def registrar_manejadores(app: FastAPI) -> None:
     async def operacion_invalida(peticion: Request, error: OperacionInvalidaError) -> Response:
         return respuesta_error(409, str(error))
 
+    @app.exception_handler(DatoInvalidoError)
+    async def dato_invalido(peticion: Request, error: DatoInvalidoError) -> Response:
+        # "campo" le dice al formulario qué casilla marcar en rojo.
+        return RespuestaJson({"error": error.mensaje, "campo": error.campo}, status_code=400)
+
+    @app.exception_handler(DemasiadosIntentosError)
+    async def demasiados_intentos(peticion: Request, error: DemasiadosIntentosError) -> Response:
+        return respuesta_error(429, error.mensaje, {"Retry-After": str(max(1, math.ceil(error.espera)))})
+
+    @app.exception_handler(CuentaError)
+    async def error_cuenta(peticion: Request, error: CuentaError) -> Response:
+        codigo = next((c for tipo, c in CODIGOS_CUENTA if isinstance(error, tipo)), 400)
+        return respuesta_error(codigo, error.mensaje)
+
     @app.exception_handler(RequestValidationError)
     async def error_validacion(peticion: Request, error: RequestValidationError) -> Response:
         primero = next(iter(error.errors()), None)
@@ -94,6 +133,10 @@ def traducir_validacion(error: Mapping[str, Any]) -> str:
         return f"El campo '{campo}' debe ser un número"
     if tipo in ("bool_type", "bool_parsing"):
         return f"El campo '{campo}' debe ser true o false"
+    if tipo == "string_too_long":
+        return f"El campo '{campo}' es demasiado largo"
+    if tipo == "extra_forbidden":
+        return f"Campo no permitido: '{campo}'"
     if tipo == "string_type":
         return f"El campo '{campo}' debe ser un texto"
     return f"Dato inválido en '{campo or 'petición'}': {mensaje}"
