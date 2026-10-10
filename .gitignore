@@ -1,16 +1,21 @@
-# Maven
-target/
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
 
-# Java
-*.class
-*.log
-hs_err_pid*
+# Cachés de las herramientas
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # IDE
 .idea/
-*.iml
 .vscode/
 
 # Entorno y datos locales
 .env
 data/
+*.log
