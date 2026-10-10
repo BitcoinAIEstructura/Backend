@@ -306,13 +306,16 @@ En todo el periodo, ninguna estrategia superó a comprar y mantener.
 
 > **Todo es simulado:** no hay dinero real, ni conexión a una cuenta de exchange, ni claves de API. El único dato externo es el precio público de Binance, que se usa para ejecutar las órdenes simuladas.
 
+> **Cada usuario tiene su propia simulación** (cartera, órdenes, historial y bot). Todos los endpoints de esta sección **exigen sesión**: sin la cookie responden `401` `{"error":"Tu sesión terminó; vuelve a iniciar sesión"}`, y la sesión se revisa antes que el cuerpo. Un usuario nunca ve ni toca las órdenes de otro: para él, la orden #1 de otra persona no existe (`404`).
+
 **Cómo funciona:**
-- **Cartera:** empieza con 10 000 USDT y 0 BTC. Cada compra y cada venta paga una comisión de 0,1 %.
+- **Cartera:** cada cuenta empieza con 10 000 USDT y 0 BTC. Cada compra y cada venta paga una comisión de 0,1 %.
 - **Cola de pendientes:** cada orden nueva espera en una **Cola** y se ejecuta en orden de llegada (FIFO), al precio actual.
 - **Registro:** las órdenes terminadas (ejecutadas, canceladas o rechazadas) quedan en una **Lista**.
 - **Historial:** cada evento se apila en una **Pila**, con el más reciente arriba.
 - **Quién ejecuta:** con el bot detenido, las órdenes se ejecutan con `POST /api/ordenes/procesar`. Con el bot en marcha, al final de cada ciclo procesa la cola entera, incluidas las órdenes manuales.
-- **Persistencia:** el estado se guarda en `DATA_DIR` después de cada cambio y se recupera al reiniciar (ver [Persistencia](#persistencia)).
+- **Bot:** cada usuario enciende el suyo. Como cada bot consulta el mercado periódicamente, hay como máximo `MAX_BOTS` encendidos a la vez entre todos (por defecto 20); si se llega al límite, `POST /api/bot/iniciar` responde `409`.
+- **Persistencia:** la simulación de cada usuario se guarda en la base de datos después de cada cambio y se recupera al reiniciar (ver [Persistencia](#persistencia)).
 
 **Estados de una orden:**
 
@@ -332,7 +335,8 @@ En todo el periodo, ninguna estrategia superó a comprar y mantener.
 | --- | --- |
 | 400 | Datos inválidos; el mensaje dice cuál |
 | 404 | La orden no existe |
-| 409 | El estado no lo permite: cancelar algo ya ejecutado, procesar con la cola vacía, iniciar el bot dos veces |
+| 401 | No hay sesión |
+| 409 | El estado no lo permite: cancelar algo ya ejecutado, procesar con la cola vacía, iniciar el bot dos veces, o ya hay `MAX_BOTS` bots en marcha |
 | 502 | No se pudo obtener el precio; la orden vuelve al frente de la cola, pendiente |
 
 ### Órdenes
@@ -448,12 +452,14 @@ data: {"simbolo":"BTCUSDT","precio":82724.02,"momento":1791434246201}
 
 ```
 
-| Evento | Cuándo llega | `data` |
-| --- | --- | --- |
-| `precio` | Cada 5 segundos, mientras haya alguien conectado | `{simbolo, precio, momento}` |
-| `orden` | Cada vez que una orden cambia de estado: creada, procesando, ejecutada, rechazada, cancelada o deshecha | la orden completa, como en `/api/ordenes` |
-| `cartera` | Cuando cambian el saldo o el BTC, es decir, cuando se ejecuta una orden | igual que `/api/cartera` |
-| `senal` | Cuando cambia la decisión de la estrategia combinada. Lo publica el bot, así que solo llega con el bot en marcha; la primera decisión tras iniciarlo siempre se envía | la decisión `{tiempo, senal, precio, confianza, motivo}` |
+**Público o privado:** el stream no exige sesión. Sin sesión llega solo el precio. Con la cookie de sesión llegan además los eventos **de ese usuario** (sus órdenes, su cartera, su señal), en todos sus dispositivos conectados; nunca los de otra persona. Desde el navegador: `new EventSource(url, { withCredentials: true })`.
+
+| Evento | Para quién | Cuándo llega | `data` |
+| --- | --- | --- | --- |
+| `precio` | Todos | Cada 5 segundos, mientras haya alguien conectado | `{simbolo, precio, momento}` |
+| `orden` | El dueño | Cada vez que una orden cambia de estado: creada, procesando, ejecutada, rechazada, cancelada o deshecha | la orden completa, como en `/api/ordenes` |
+| `cartera` | El dueño | Cuando cambian el saldo o el BTC, es decir, cuando se ejecuta una orden | igual que `/api/cartera` |
+| `senal` | El dueño | Cuando cambia la decisión de la estrategia combinada. Lo publica el bot, así que solo llega con el bot en marcha; la primera decisión tras iniciarlo siempre se envía | la decisión `{tiempo, senal, precio, confianza, motivo}` |
 
 **Otros mensajes:**
 - Al conectarse llega `retry: 5000` (si se corta, el navegador reintenta a los 5 s) y el comentario `: conectado`.
@@ -473,28 +479,27 @@ curl -N localhost:8080/api/stream
 Desde el panel (JavaScript):
 
 ```js
-const fuente = new EventSource("https://tu-backend/api/stream");
+const fuente = new EventSource("https://tu-backend/api/stream", { withCredentials: true });
 fuente.addEventListener("precio", e => console.log(JSON.parse(e.data).precio));
 fuente.addEventListener("orden", e => console.log(JSON.parse(e.data)));
 ```
 
 ## Persistencia
 
-La simulación (cartera, órdenes e historial) se guarda en archivos JSON dentro de `DATA_DIR` (por defecto `./data`) **después de cada cambio**, y se carga al arrancar el servidor.
+La simulación de cada usuario (cartera, órdenes e historial) se guarda en la base de datos SQLite (`BASE_DATOS`, por defecto `<DATA_DIR>/bitcoinai.db`) **después de cada cambio**, y se carga la primera vez que el usuario la usa tras arrancar el servidor.
 
-| Archivo | Contenido |
+| Tabla | Contenido |
 | --- | --- |
-| `cartera.json` | Saldo inicial, saldo en USDT, BTC, costo de la posición, ganancia realizada y comisiones |
-| `ordenes.json` | Cola de pendientes en orden de llegada, registro de órdenes terminadas, ids en orden de creación (para seguir pudiendo deshacer) y próximo id |
-| `historial.json` | Eventos del más viejo al más nuevo (los últimos 2000) |
+| `simulaciones` | Una fila por usuario: saldo inicial, saldo en USDT, BTC, costo de la posición, ganancia realizada, comisiones y próximo id de orden |
+| `ordenes` | Cada orden con su lugar (`pendiente` en la cola o `registro`) y su posición dentro de él |
+| `ordenes_creadas` | Ids en orden de creación (la Pila para seguir pudiendo deshacer) |
+| `eventos_simulacion` | Historial del más viejo al más nuevo (los últimos 2000) |
 
-- **Escritura atómica:** cada archivo se escribe primero en un `.tmp` y luego se mueve sobre el definitivo. Si el servidor muere a mitad de una escritura, queda el archivo anterior completo, nunca uno a medias.
+- **Todo o nada:** cada guardado reemplaza la foto completa del usuario dentro de una transacción. Si el servidor muere a mitad, queda la anterior entera.
 - **Mismo orden al recargar:** la Cola se reconstruye en el orden de llegada y las Pilas (historial e ids creados) quedan con el elemento más reciente arriba. Si el servidor se apagó mientras una orden se procesaba, esa orden vuelve al frente de la cola como pendiente.
-- **Archivos dañados:**
-  - Si un archivo no se puede leer, el servidor arranca igual: se renombra a `*.danado-<momento>` para poder revisarlo, se registra una advertencia y se empieza con estado limpio.
-  - `cartera.json` y `ordenes.json` se cargan juntos: si uno falla o falta, no se usa ninguno, para no mezclar una cartera con órdenes que no le corresponden.
-  - El historial se carga aparte.
-- **Railway:** el disco de un contenedor de Railway **se borra en cada despliegue**. Para conservar la simulación hay que montar un volumen (por ejemplo en `/data`) y definir `DATA_DIR=/data`. Sin volumen, cada despliegue empieza con 10 000 USDT nuevos.
+- **Datos inválidos:** si la foto guardada de un usuario no se puede leer, se registra una advertencia y ese usuario empieza con una simulación limpia; los demás no se ven afectados.
+- **Formato anterior:** los archivos JSON de la versión de un solo usuario (`AlmacenArchivos`) siguen en el código, pero el servidor ya no los usa.
+- **Railway:** el disco de un contenedor de Railway **se borra en cada despliegue**. Para conservar usuarios y simulaciones hay que montar un volumen (por ejemplo en `/data`) y definir `DATA_DIR=/data`.
 
 ## Cuentas y seguridad
 
@@ -594,6 +599,7 @@ Ninguna es obligatoria. La única secreta es `CLAVE_CIFRADO`.
 | `TTL_CACHE_SEGUNDOS` | `30` | Segundos que se guardan en caché el precio y las velas. `0` desactiva la caché. |
 | `SIMBOLO` | `BTCUSDT` | Par de mercado que se consulta. |
 | `MAX_STREAMS` | `50` | Conexiones simultáneas permitidas a `/api/stream` (entre 1 y 10 000). |
+| `MAX_BOTS` | `20` | Bots simulados encendidos a la vez entre todos los usuarios (entre 1 y 1000). |
 | `DATA_DIR` | `./data` | Carpeta donde se guarda la simulación. En Railway, apúntala a un volumen montado (por ejemplo `/data`); si no, se borra en cada despliegue. |
 | `BASE_DATOS` | `<DATA_DIR>/bitcoinai.db` | Archivo SQLite con usuarios, sesiones y actividad. |
 | `CLAVE_CIFRADO` | (se genera una local) | **Secreta.** 32 bytes en base64 para cifrar los datos personales. Si falta, se crea `<DATA_DIR>/clave-cifrado.key`. En producción defínela como secreto; si se pierde, los datos cifrados no se pueden recuperar. |

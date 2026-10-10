@@ -38,6 +38,9 @@ Las clases conservan el nombre que tenían en Java.
 | `Pila[int]` | `LibroDeOrdenes` | Ids en orden de creación, para deshacer la última orden (y la anterior, y la anterior…) |
 | `ListaDoble[Suscriptor]` | `Publicador` | Clientes conectados a `/api/stream`; cada uno guarda su nodo para quitarlo en O(1) al desconectarse |
 | `Cola[str]` | `Suscriptor` | Buzón de cada cliente de `/api/stream`: el publicador encola desde cualquier hilo y la respuesta HTTP desencola en orden, O(1) cada uno |
+| `Cola[float]` | `LimitadorIntentos` | Momentos de los intentos de inicio de sesión por correo o IP: los vencidos salen por el frente (ventana deslizante, O(1) amortizado) |
+| `ListaDoble[Suscriptor]` | `Publicador.publicar_a` | Los eventos privados se entregan solo a los suscriptores de ese usuario, recorriendo la lista una vez (O(n)) |
+| `dict[int, SimulacionUsuario]` | `GestorSimulaciones` | La simulación de cada usuario por su id, en O(1). En la fase de estructuras avanzadas se reemplaza por una tabla hash propia |
 | `Lista[Orden]`, `Lista[int]`, `Lista[Evento]` | `EstadoSimulacion` | Foto del libro de órdenes para guardarla en disco, en el orden en que hay que recargarla |
 
 ### Quitar un elemento por su nodo en O(1) (tiempo real)
