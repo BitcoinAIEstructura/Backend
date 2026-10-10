@@ -9,6 +9,7 @@ from bitcoinai.estrategia import Decision, Estrategia, Senal
 from bitcoinai.mercado import FuenteDeMercado, velas_cerradas
 from bitcoinai.modelo import Intervalo
 from bitcoinai.simulacion.cartera import EstadoCartera
+from bitcoinai.simulacion.interfaces import PublicadorEventos, SinPublicar
 from bitcoinai.simulacion.libro import LibroDeOrdenes
 from bitcoinai.simulacion.modelo import OperacionInvalidaError, TipoEvento
 
@@ -84,6 +85,9 @@ class BotSimulado:
 
     Un ciclo que falla (por ejemplo, porque Binance no responde) se registra como
     error y el bot sigue con el próximo.
+
+    Tiempo real: publica "senal" con la ``Decision`` solo cuando la señal cambia
+    respecto del ciclo anterior (al iniciar, la primera siempre se publica).
     """
 
     def __init__(self, libro: LibroDeOrdenes, fuente: FuenteDeMercado, estrategia: Estrategia, simbolo: str,
@@ -101,6 +105,12 @@ class BotSimulado:
         self._ultimo_ciclo: int | None = None
         self._ultima_decision: Decision | None = None
         self._ultimo_error: str | None = None
+        self._publicador: PublicadorEventos = SinPublicar()
+        self._ultima_senal_publicada: Senal | None = None
+
+    def usar_publicador(self, publicador: PublicadorEventos) -> None:
+        """A quién avisar cuando cambia la señal."""
+        self._publicador = publicador
 
     def iniciar(self, configuracion: ConfiguracionBot) -> EstadoBot:
         """Pone en marcha el bot; el primer ciclo empieza enseguida.
@@ -112,6 +122,7 @@ class BotSimulado:
             if self._parar is not None:
                 raise OperacionInvalidaError("El bot ya está en marcha; deténlo antes de iniciarlo de nuevo")
             self._configuracion = configuracion
+            self._ultima_senal_publicada = None
             parar = threading.Event()
             self._parar = parar
             hilo = threading.Thread(target=self._bucle, args=(parar, configuracion.segundos_entre_ciclos),
@@ -159,6 +170,9 @@ class BotSimulado:
                 cartera = self._libro.estado_cartera(precio)
                 decision = self._estrategia.evaluar(velas)
                 self._ultima_decision = decision
+                if decision.senal is not self._ultima_senal_publicada:
+                    self._ultima_senal_publicada = decision.senal
+                    self._publicador.publicar("senal", decision)
                 self._libro.registrar_evento(
                     TipoEvento.DECISION_BOT, None,
                     f"El bot decidió {decision.senal.name} (confianza {decision.confianza:.2f}): {decision.motivo}")

@@ -3,6 +3,7 @@
 import math
 from dataclasses import dataclass
 
+from bitcoinai.simulacion.interfaces import DatosCartera
 from bitcoinai.simulacion.modelo import OperacionRechazadaError
 
 SALDO_INICIAL_POR_DEFECTO = 10_000.0
@@ -76,6 +77,22 @@ class Cartera:
         self.costo_posicion = 0.0
         self.ganancia_realizada = 0.0
         self.comisiones_pagadas = 0.0
+
+    @classmethod
+    def desde_datos(cls, datos: DatosCartera) -> "Cartera":
+        """Reconstruye una cartera guardada."""
+        cartera = cls(datos.saldo_inicial)
+        cartera.saldo_usdt = datos.saldo_usdt
+        cartera.btc = datos.btc
+        cartera.costo_posicion = datos.costo_posicion if datos.btc > 0 else 0.0
+        cartera.ganancia_realizada = datos.ganancia_realizada
+        cartera.comisiones_pagadas = datos.comisiones_pagadas
+        return cartera
+
+    def datos(self) -> DatosCartera:
+        """Los datos necesarios para reconstruirla. Complejidad: O(1)."""
+        return DatosCartera(self.saldo_inicial, self.saldo_usdt, self.btc, self.costo_posicion,
+                            self.ganancia_realizada, self.comisiones_pagadas)
 
     def comprar(self, monto_usdt: float, precio: float, comision: float) -> Ejecucion:
         """Compra BTC por un monto en USDT (comisión incluida).

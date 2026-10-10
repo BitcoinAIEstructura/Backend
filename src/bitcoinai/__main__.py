@@ -11,20 +11,31 @@ import uvicorn
 from fastapi import FastAPI
 
 from bitcoinai.api import Configuracion, crear_app
+from bitcoinai.api.publicador import Publicador
 from bitcoinai.estrategia import EstrategiaCombinada
 from bitcoinai.mercado import CacheMercado, ClienteBinance
+from bitcoinai.persistencia import AlmacenArchivos
 from bitcoinai.simulacion import BotSimulado, Cartera, LibroDeOrdenes
+
+LOG = logging.getLogger("bitcoinai")
 
 
 def construir(config: Configuracion) -> FastAPI:
     """Arma la aplicación real: Binance con caché, la simulación y todos los endpoints.
 
-    El bot queda creado pero detenido; se inicia con POST /api/bot/iniciar.
+    El bot queda creado pero detenido; se inicia con POST /api/bot/iniciar. La
+    simulación se recupera de ``DATA_DIR`` (si hay algo guardado) y se guarda
+    después de cada cambio; los cambios se publican en /api/stream.
     """
     fuente = CacheMercado(ClienteBinance(config.url_base_binance), config.ttl_cache_segundos)
+    publicador = Publicador(fuente, config.simbolo, config.max_streams)
     libro = LibroDeOrdenes(Cartera(), fuente, config.simbolo)
+    if libro.usar_almacen(AlmacenArchivos(config.data_dir)):
+        LOG.info("Simulación recuperada de %s", config.data_dir)
+    libro.usar_publicador(publicador)
     bot = BotSimulado(libro, fuente, EstrategiaCombinada(), config.simbolo)
-    return crear_app(config, fuente, libro, bot)
+    bot.usar_publicador(publicador)
+    return crear_app(config, fuente, libro, bot, publicador)
 
 
 def main() -> None:
@@ -38,7 +49,9 @@ def main() -> None:
     print(f"Backend iniciado en http://0.0.0.0:{config.puerto} "
           f"(símbolo {config.simbolo}, Binance {config.url_base_binance})", flush=True)
     # access_log=False: el registro de cada petición lo hace MiddlewareRegistro.
-    uvicorn.run(app, host="0.0.0.0", port=config.puerto, access_log=False, log_level="warning")
+    # timeout_graceful_shutdown: las conexiones de /api/stream no terminan solas; al apagar se cortan.
+    uvicorn.run(app, host="0.0.0.0", port=config.puerto, access_log=False, log_level="warning",
+                timeout_graceful_shutdown=3)
 
 
 if __name__ == "__main__":

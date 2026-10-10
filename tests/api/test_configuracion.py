@@ -10,6 +10,8 @@ def test_valores_por_defecto() -> None:
     assert c.origen_permitido == "*"
     assert c.ttl_cache_segundos == 30
     assert c.simbolo == "BTCUSDT"
+    assert c.max_streams == 50
+    assert c.data_dir == "./data"
 
 
 def test_lee_las_variables_definidas() -> None:
@@ -19,12 +21,16 @@ def test_lee_las_variables_definidas() -> None:
         "ORIGEN_PERMITIDO": "https://mi-panel.app",
         "TTL_CACHE_SEGUNDOS": "0",
         "SIMBOLO": " ethusdt ",
+        "MAX_STREAMS": "5",
+        "DATA_DIR": "/data",
     })
     assert c.puerto == 3000
     assert c.url_base_binance == "https://data-api.binance.vision"
     assert c.origen_permitido == "https://mi-panel.app"
     assert c.ttl_cache_segundos == 0
     assert c.simbolo == "ETHUSDT"
+    assert c.max_streams == 5
+    assert c.data_dir == "/data"
 
 
 def test_valores_vacios_usan_el_por_defecto() -> None:
@@ -53,3 +59,8 @@ def test_ttl_y_simbolo_invalidos() -> None:
     with pytest.raises(ValueError, match="SIMBOLO inválido"):
         Configuracion.desde_entorno({"SIMBOLO": "BTC/USDT"})
 
+
+def test_max_streams_fuera_de_rango() -> None:
+    for valor in ("0", "10001", "muchos"):
+        with pytest.raises(ValueError, match="MAX_STREAMS debe ser un número entero entre 1 y 10000"):
+            Configuracion.desde_entorno({"MAX_STREAMS": valor})

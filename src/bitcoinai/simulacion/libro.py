@@ -1,6 +1,7 @@
 """Libro de órdenes simulado (paper trading). Nunca toca una cuenta real."""
 
 import dataclasses
+import logging
 import math
 import threading
 import time
@@ -9,6 +10,7 @@ from collections.abc import Callable
 from bitcoinai.estructuras import Cola, Lista, Pila
 from bitcoinai.mercado import FuenteDeMercado
 from bitcoinai.simulacion.cartera import Cartera, Ejecucion, EstadoCartera
+from bitcoinai.simulacion.interfaces import AlmacenSimulacion, EstadoSimulacion, PublicadorEventos, SinPublicar
 from bitcoinai.simulacion.modelo import (
     EstadoOrden,
     Evento,
@@ -22,6 +24,11 @@ from bitcoinai.simulacion.modelo import (
 
 COMISION_POR_DEFECTO = 0.001
 """Comisión por defecto: 0,1 %."""
+
+EVENTOS_GUARDADOS_MAXIMO = 2000
+"""Cuántos eventos del historial se guardan en disco como máximo (los más recientes)."""
+
+LOG = logging.getLogger("bitcoinai.simulacion")
 
 
 def _ahora_ms() -> int:
@@ -43,6 +50,10 @@ class LibroDeOrdenes:
     toma solo mientras se tocan y nunca durante una llamada de red. Un segundo
     candado (``_candado_proceso``) hace que las órdenes se procesen de a una, así
     se respeta el orden FIFO aunque dos hilos procesen a la vez.
+
+    Tiempo real y persistencia (opcionales): avisa cada cambio a un
+    ``PublicadorEventos`` y guarda el estado en un ``AlmacenSimulacion`` después de
+    cada cambio. Ninguno de los dos depende de HTTP ni de archivos aquí.
     """
 
     def __init__(self, cartera: Cartera, fuente: FuenteDeMercado, simbolo: str,
@@ -63,6 +74,82 @@ class LibroDeOrdenes:
         self._creadas: Pila[int] = Pila()
         self._siguiente_id = 1
         self._en_proceso: Orden | None = None
+        self._publicador: PublicadorEventos = SinPublicar()
+        self._almacen: AlmacenSimulacion | None = None  # protegido por _candado
+
+    # ---------- tiempo real y persistencia ----------
+
+    def usar_publicador(self, publicador: PublicadorEventos) -> None:
+        """A quién avisar: "orden" cuando una orden cambia de estado y "cartera" cuando cambia el saldo o el BTC."""
+        self._publicador = publicador
+
+    def usar_almacen(self, almacen: AlmacenSimulacion) -> bool:
+        """Carga el estado guardado (si hay) y a partir de ahora guarda después de cada cambio.
+
+        Reconstruye las estructuras en el mismo orden: la cola con el orden de
+        llegada, y las pilas con el elemento más reciente arriba.
+
+        Returns:
+            True si se recuperó un estado guardado.
+        """
+        guardado = almacen.cargar()
+        with self._candado:
+            if guardado is not None:
+                self._restaurar(guardado)
+            self._almacen = almacen
+            return guardado is not None
+
+    def _restaurar(self, estado: EstadoSimulacion) -> None:
+        """Reemplaza el estado actual por el guardado. Se llama con el candado tomado. O(n)."""
+        if estado.cartera is not None:
+            self._cartera = Cartera.desde_datos(estado.cartera)
+        mayor_id = 0
+        self._pendientes.vaciar()
+        for orden in estado.pendientes:
+            self._pendientes.encolar(orden)  # la primera guardada vuelve a ser el frente
+            mayor_id = max(mayor_id, orden.id)
+        self._registro.vaciar()
+        for orden in estado.registro:
+            self._registro.agregar(orden)
+            mayor_id = max(mayor_id, orden.id)
+        self._creadas.vaciar()
+        for id_orden in estado.creadas:
+            self._creadas.apilar(id_orden)  # la última guardada queda en el tope
+        self._eventos.vaciar()
+        for evento in estado.eventos:
+            self._eventos.apilar(evento)  # el evento más reciente queda arriba
+        self._siguiente_id = max(estado.siguiente_id, mayor_id + 1)
+
+    def _instantanea(self) -> EstadoSimulacion:
+        """Foto para guardar. Se llama con el candado tomado. Complejidad: O(n)."""
+        pendientes: Lista[Orden] = Lista()
+        if self._en_proceso is not None:
+            # Si el servidor se apaga a mitad de un proceso, la orden vuelve al frente al recargar.
+            pendientes.agregar(self._en_proceso.con_estado(EstadoOrden.PENDIENTE, None))
+        for _ in range(self._pendientes.tamanio()):  # rotar la cola: queda igual tras n vueltas
+            orden = self._pendientes.desencolar()
+            self._pendientes.encolar(orden)
+            pendientes.agregar(orden)
+        registro: Lista[Orden] = Lista()
+        for orden in self._registro:
+            registro.agregar(orden)
+        todos = _de_abajo_hacia_arriba(self._eventos)
+        recientes: Lista[Evento] = Lista()
+        saltar = max(0, todos.tamanio() - EVENTOS_GUARDADOS_MAXIMO)
+        for indice, evento in enumerate(todos):
+            if indice >= saltar:
+                recientes.agregar(evento)
+        return EstadoSimulacion(self._cartera.datos(), self._siguiente_id, pendientes, registro,
+                                _de_abajo_hacia_arriba(self._creadas), recientes)
+
+    def _guardar(self) -> None:
+        """Guarda si hay almacén. Un fallo al guardar no deshace la operación: se registra y se sigue."""
+        if self._almacen is None:
+            return
+        try:
+            self._almacen.guardar(self._instantanea())
+        except Exception as error:
+            LOG.warning("No se pudo guardar el estado de la simulación: %s", error)
 
     # ---------- crear ----------
 
@@ -101,6 +188,8 @@ class LibroDeOrdenes:
             que = "vender todo el BTC" if todo else f"{monto:.2f} USDT"
             self._apilar_evento(TipoEvento.ORDEN_CREADA, orden.id,
                                 f"Orden #{orden.id} de {tipo.name} por {que} creada ({motivo_final}).")
+            self._publicador.publicar("orden", orden)
+            self._guardar()
             return orden
 
     # ---------- procesar ----------
@@ -127,17 +216,24 @@ class LibroDeOrdenes:
                     return None
                 pendiente = self._pendientes.desencolar()
                 self._en_proceso = pendiente.con_estado(EstadoOrden.PROCESANDO, None)
+                self._publicador.publicar("orden", self._en_proceso)
             try:
                 precio = self._fuente.obtener_precio_actual(self._simbolo)
             except Exception:
                 with self._candado:
                     self._en_proceso = None
                     self._devolver_al_frente(pendiente)
+                    self._publicador.publicar("orden", pendiente)
+                    self._guardar()
                 raise
             with self._candado:
                 resultado = self._ejecutar(self._en_proceso, precio)
                 self._en_proceso = None
                 self._registro.agregar(resultado)
+                self._publicador.publicar("orden", resultado)
+                if resultado.estado is EstadoOrden.EJECUTADA:
+                    self._publicador.publicar("cartera", self._cartera.estado(precio))
+                self._guardar()
                 return resultado
 
     def _ejecutar(self, orden: Orden, precio: float) -> Orden:
@@ -194,6 +290,8 @@ class LibroDeOrdenes:
             if cancelada is None:
                 raise self._no_pendiente(id_orden)
             self._apilar_evento(TipoEvento.ORDEN_CANCELADA, id_orden, f"Orden #{id_orden} cancelada.")
+            self._publicador.publicar("orden", cancelada)
+            self._guardar()
             return cancelada
 
     def deshacer_ultima_orden(self) -> Orden | None:
@@ -212,8 +310,11 @@ class LibroDeOrdenes:
             id_orden = self._creadas.desapilar()
             deshecha = self._quitar_de_la_cola(id_orden, EstadoOrden.CANCELADA, "Deshecha: era la última orden creada.")
             if deshecha is None:
+                self._guardar()  # la pila de creadas cambió
                 return None
             self._apilar_evento(TipoEvento.ORDEN_DESHECHA, id_orden, f"Orden #{id_orden} deshecha.")
+            self._publicador.publicar("orden", deshecha)
+            self._guardar()
             return deshecha
 
     def _quitar_de_la_cola(self, id_orden: int, estado: EstadoOrden, detalle: str) -> Orden | None:
@@ -310,7 +411,25 @@ class LibroDeOrdenes:
         """Agrega un evento al historial (lo usa el bot para sus decisiones)."""
         with self._candado:
             self._apilar_evento(tipo, id_orden, descripcion)
+            self._guardar()
 
     def _apilar_evento(self, tipo: TipoEvento, id_orden: int | None, descripcion: str) -> None:
         """Se llama con el candado tomado. O(1)."""
         self._eventos.apilar(Evento(self._reloj(), tipo, id_orden, descripcion))
+
+
+def _de_abajo_hacia_arriba[T](pila: Pila[T]) -> Lista[T]:
+    """Elementos de una pila del fondo al tope, sin perderla.
+
+    Se desapila todo a una auxiliar (que queda con el fondo arriba) y al
+    devolverlos salen del fondo al tope. Complejidad: O(n).
+    """
+    auxiliar: Pila[T] = Pila()
+    while not pila.esta_vacia():
+        auxiliar.apilar(pila.desapilar())
+    resultado: Lista[T] = Lista()
+    while not auxiliar.esta_vacia():
+        elemento = auxiliar.desapilar()
+        resultado.agregar(elemento)
+        pila.apilar(elemento)
+    return resultado

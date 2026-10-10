@@ -22,6 +22,8 @@ class Configuracion:
         origen_permitido: origen permitido para CORS (``ORIGEN_PERMITIDO``, por defecto ``*``).
         ttl_cache_segundos: segundos de caché de los datos de mercado (``TTL_CACHE_SEGUNDOS``, por defecto 30).
         simbolo: par de mercado (``SIMBOLO``, por defecto BTCUSDT).
+        max_streams: conexiones simultáneas a /api/stream (``MAX_STREAMS``, por defecto 50).
+        data_dir: carpeta donde se guarda la simulación (``DATA_DIR``, por defecto ``./data``).
     """
 
     puerto: int = 8080
@@ -29,6 +31,8 @@ class Configuracion:
     origen_permitido: str = "*"
     ttl_cache_segundos: int = 30
     simbolo: str = "BTCUSDT"
+    max_streams: int = 50
+    data_dir: str = "./data"
 
     @classmethod
     def desde_entorno(cls, entorno: Mapping[str, str] | None = None) -> Configuracion:
@@ -47,6 +51,8 @@ class Configuracion:
             origen_permitido=_texto(variables, "ORIGEN_PERMITIDO", "*"),
             ttl_cache_segundos=_entero(variables, "TTL_CACHE_SEGUNDOS", 30, 0, 86_400),
             simbolo=simbolo,
+            max_streams=_entero(variables, "MAX_STREAMS", 50, 1, 10_000),
+            data_dir=_texto(variables, "DATA_DIR", "./data"),
         )
 
 

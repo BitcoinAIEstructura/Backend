@@ -2,7 +2,14 @@
 
 from bitcoinai.simulacion.bot import COMPRA_MINIMA, BotSimulado, ConfiguracionBot, EstadoBot
 from bitcoinai.simulacion.cartera import SALDO_INICIAL_POR_DEFECTO, Cartera, Ejecucion, EstadoCartera
-from bitcoinai.simulacion.libro import COMISION_POR_DEFECTO, LibroDeOrdenes
+from bitcoinai.simulacion.interfaces import (
+    AlmacenSimulacion,
+    DatosCartera,
+    EstadoSimulacion,
+    PublicadorEventos,
+    SinPublicar,
+)
+from bitcoinai.simulacion.libro import COMISION_POR_DEFECTO, EVENTOS_GUARDADOS_MAXIMO, LibroDeOrdenes
 from bitcoinai.simulacion.modelo import (
     EstadoOrden,
     Evento,
@@ -17,20 +24,26 @@ from bitcoinai.simulacion.modelo import (
 __all__ = (
     "COMISION_POR_DEFECTO",
     "COMPRA_MINIMA",
+    "EVENTOS_GUARDADOS_MAXIMO",
     "SALDO_INICIAL_POR_DEFECTO",
+    "AlmacenSimulacion",
     "BotSimulado",
     "Cartera",
     "ConfiguracionBot",
+    "DatosCartera",
     "Ejecucion",
     "EstadoBot",
     "EstadoCartera",
     "EstadoOrden",
+    "EstadoSimulacion",
     "Evento",
     "LibroDeOrdenes",
     "OperacionInvalidaError",
     "OperacionRechazadaError",
     "Orden",
     "OrdenNoEncontradaError",
+    "PublicadorEventos",
+    "SinPublicar",
     "TipoEvento",
     "TipoOrden",
 )
