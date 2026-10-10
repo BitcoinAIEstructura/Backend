@@ -11,13 +11,20 @@ import uvicorn
 from fastapi import FastAPI
 
 from bitcoinai.api import Configuracion, crear_app
+from bitcoinai.estrategia import EstrategiaCombinada
 from bitcoinai.mercado import CacheMercado, ClienteBinance
+from bitcoinai.simulacion import BotSimulado, Cartera, LibroDeOrdenes
 
 
 def construir(config: Configuracion) -> FastAPI:
-    """Arma la aplicación real: Binance con caché y todos los endpoints."""
+    """Arma la aplicación real: Binance con caché, la simulación y todos los endpoints.
+
+    El bot queda creado pero detenido; se inicia con POST /api/bot/iniciar.
+    """
     fuente = CacheMercado(ClienteBinance(config.url_base_binance), config.ttl_cache_segundos)
-    return crear_app(config, fuente)
+    libro = LibroDeOrdenes(Cartera(), fuente, config.simbolo)
+    bot = BotSimulado(libro, fuente, EstrategiaCombinada(), config.simbolo)
+    return crear_app(config, fuente, libro, bot)
 
 
 def main() -> None:

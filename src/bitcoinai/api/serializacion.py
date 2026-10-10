@@ -18,6 +18,7 @@ from bitcoinai.estrategia import (
 from bitcoinai.estructuras import ListaDoble
 from bitcoinai.indicadores import PuntoIndicador, ResultadoCaida, Serie
 from bitcoinai.modelo import Vela
+from bitcoinai.simulacion import ConfiguracionBot, EstadoBot, EstadoCartera, Evento, Orden
 
 
 def vela_a_json(vela: Vela) -> dict[str, Any]:
@@ -131,6 +132,68 @@ def validacion_a_json(v: ResultadoValidacion) -> dict[str, Any]:
         "candidatos": [candidato_a_json(c) for c in v.candidatos],
         "entrenamiento": backtest_a_json(v.entrenamiento),
         "prueba": backtest_a_json(v.prueba),
+    }
+
+
+def orden_a_json(orden: Orden) -> dict[str, Any]:
+    """Una orden simulada con los nombres del contrato. Complejidad: O(1)."""
+    return {
+        "id": orden.id,
+        "tipo": orden.tipo.name,
+        "monto": orden.monto,
+        "todo": orden.todo,
+        "estado": orden.estado.name,
+        "creadaEn": orden.creada_en,
+        "ejecutadaEn": orden.ejecutada_en,
+        "precioEjecucion": orden.precio_ejecucion,
+        "cantidadBtc": orden.cantidad_btc,
+        "comision": orden.comision,
+        "motivo": orden.motivo,
+        "detalle": orden.detalle,
+    }
+
+
+def evento_a_json(evento: Evento) -> dict[str, Any]:
+    """Un evento del historial. Complejidad: O(1)."""
+    return {"momento": evento.momento, "tipo": evento.tipo.name, "idOrden": evento.id_orden,
+            "descripcion": evento.descripcion}
+
+
+def cartera_a_json(c: EstadoCartera) -> dict[str, Any]:
+    """La cartera valorada a un precio. Complejidad: O(1)."""
+    return {
+        "precioActual": c.precio_actual,
+        "saldoUsdt": c.saldo_usdt,
+        "btc": c.btc,
+        "costoPromedio": c.costo_promedio,
+        "valorBtc": c.valor_btc,
+        "valorTotal": c.valor_total,
+        "gananciaNoRealizada": c.ganancia_no_realizada,
+        "gananciaRealizada": c.ganancia_realizada,
+        "gananciaTotal": c.ganancia_total,
+        "rentabilidad": c.rentabilidad,
+        "comisionesPagadas": c.comisiones_pagadas,
+        "saldoInicial": c.saldo_inicial,
+    }
+
+
+def configuracion_bot_a_json(c: ConfiguracionBot) -> dict[str, Any]:
+    """La configuración del bot. Complejidad: O(1)."""
+    return {"segundosEntreCiclos": c.segundos_entre_ciclos, "intervalo": c.intervalo,
+            "cantidadVelas": c.cantidad_velas, "riesgo": c.riesgo, "stopLoss": c.stop_loss,
+            "takeProfit": c.take_profit}
+
+
+def bot_a_json(e: EstadoBot) -> dict[str, Any]:
+    """El estado del bot. Complejidad: O(1)."""
+    return {
+        "activo": e.activo,
+        "estrategia": e.estrategia,
+        "configuracion": configuracion_bot_a_json(e.configuracion),
+        "ciclos": e.ciclos,
+        "ultimoCiclo": e.ultimo_ciclo,
+        "ultimaDecision": decision_a_json(e.ultima_decision) if e.ultima_decision is not None else None,
+        "ultimoError": e.ultimo_error,
     }
 
 

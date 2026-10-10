@@ -11,6 +11,7 @@ from starlette.exceptions import HTTPException
 
 from bitcoinai.api.respuestas import respuesta_error
 from bitcoinai.mercado import MercadoError
+from bitcoinai.simulacion import OperacionInvalidaError, OrdenNoEncontradaError
 
 LOG = logging.getLogger("bitcoinai.api")
 
@@ -32,6 +33,7 @@ def registrar_manejadores(app: FastAPI) -> None:
 
     - ``ApiError`` → su código y mensaje (400, 404, 409…).
     - ``MercadoError`` → 502 "Fuente de mercado no disponible" (el detalle va solo al registro).
+    - ``OrdenNoEncontradaError`` → 404; ``OperacionInvalidaError`` → 409.
     - 404 y 405 de FastAPI → mensajes en español; el 405 incluye el encabezado ``Allow``.
     - Validaciones de FastAPI y pydantic (por defecto 422) → 400 con el motivo en español.
 
@@ -57,6 +59,14 @@ def registrar_manejadores(app: FastAPI) -> None:
             return respuesta_error(405, f"Método {peticion.method} no permitido en {ruta}; use {permitidos}",
                                    {"Allow": permitidos})
         return respuesta_error(error.status_code, str(error.detail))
+
+    @app.exception_handler(OrdenNoEncontradaError)
+    async def orden_no_encontrada(peticion: Request, error: OrdenNoEncontradaError) -> Response:
+        return respuesta_error(404, str(error))
+
+    @app.exception_handler(OperacionInvalidaError)
+    async def operacion_invalida(peticion: Request, error: OperacionInvalidaError) -> Response:
+        return respuesta_error(409, str(error))
 
     @app.exception_handler(RequestValidationError)
     async def error_validacion(peticion: Request, error: RequestValidationError) -> Response:
