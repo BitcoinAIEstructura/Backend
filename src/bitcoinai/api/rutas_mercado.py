@@ -1,4 +1,4 @@
-"""Endpoints de mercado: /health, /api/precio y /api/velas.
+"""Endpoints de mercado: /health, /api/precio, /api/velas y /api/indicadores.
 
 Los endpoints solo traducen: leen y validan parámetros, llaman al dominio y
 arman el JSON del contrato. Son funciones normales (no async): FastAPI las
@@ -8,10 +8,11 @@ corre en su grupo de hilos, así una consulta lenta a Binance no bloquea al rest
 import time
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from bitcoinai.api.errores import ApiError
-from bitcoinai.api.serializacion import velas_a_json
+from bitcoinai.api.serializacion import caida_a_json, series_a_json, velas_a_json
+from bitcoinai.indicadores import crear_indicador, maxima_caida_de_velas
 from bitcoinai.mercado import FuenteDeMercado
 from bitcoinai.modelo import Intervalo
 
@@ -46,6 +47,32 @@ def crear_rutas_mercado(fuente: FuenteDeMercado, simbolo: str) -> APIRouter:
             "intervalo": intervalo_elegido.codigo,
             "cantidad": resultado.tamanio(),
             "velas": velas_a_json(resultado),
+        }
+
+    @rutas.get("/api/indicadores")
+    def indicadores(peticion: Request, indicador: str = "", periodo: str = "", intervalo: str = "",
+                    cantidad: str = "") -> dict[str, Any]:
+        """Calcula un indicador técnico y devuelve sus series junto con las velas usadas.
+
+        Además de ``periodo``, acepta ``rapido``, ``lento`` y ``senal`` (macd) y
+        ``desviaciones`` (bollinger). Valida todo antes de consultar Binance.
+        """
+        try:
+            elegido = crear_indicador(indicador, dict(peticion.query_params))
+        except ValueError as error:
+            raise ApiError(400, str(error)) from None
+        intervalo_elegido = leer_intervalo(intervalo or INTERVALO_POR_DEFECTO)
+        cantidad_elegida = leer_cantidad(cantidad or str(CANTIDAD_POR_DEFECTO))
+        velas_usadas = fuente.obtener_velas(simbolo, intervalo_elegido, cantidad_elegida)
+        return {
+            "simbolo": simbolo,
+            "intervalo": intervalo_elegido.codigo,
+            "indicador": elegido.nombre(),
+            "parametros": elegido.parametros(),
+            "series": series_a_json(elegido.calcular_series(velas_usadas)),
+            "maximaCaida": caida_a_json(maxima_caida_de_velas(velas_usadas)),
+            "cantidad": velas_usadas.tamanio(),
+            "velas": velas_a_json(velas_usadas),
         }
 
     return rutas
