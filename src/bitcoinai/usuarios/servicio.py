@@ -16,6 +16,11 @@ from bitcoinai.usuarios.actividad import RegistroActividad, TipoActividad
 from bitcoinai.usuarios.modelo import DatosRegistro, Usuario
 from bitcoinai.usuarios.repositorio import RepositorioUsuarios, UsuarioDuplicadoError
 from bitcoinai.usuarios.sesiones import RepositorioSesiones
+from bitcoinai.usuarios.validacion import DatoInvalidoError, normalizar_correo
+
+FALLOS_POR_CORREO = 5
+FALLOS_POR_IP = 20
+VENTANA_FALLOS = 15 * 60
 
 
 class CuentaError(Exception):
@@ -40,6 +45,26 @@ class DemasiadosIntentosError(CuentaError):
         self.espera = espera
 
 
+class CredencialesInvalidasError(CuentaError):
+    """Correo o contraseña equivocados (nunca se dice cuál de los dos)."""
+
+    def __init__(self) -> None:
+        super().__init__("Correo o contraseña incorrectos")
+
+
+@dataclass(frozen=True, slots=True)
+class ResultadoInicio:
+    """Resultado de un inicio de sesión con la contraseña correcta.
+
+    - Sin verificación en dos pasos: ``usuario`` y ``token_sesion``.
+    - Con verificación en dos pasos: solo ``token_desafio``; falta el código de 6 dígitos.
+    """
+
+    usuario: Usuario | None = None
+    token_sesion: str | None = None
+    token_desafio: str | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class Cliente:
     """Quién hace la petición: su IP y su navegador (para la actividad y los límites)."""
@@ -62,6 +87,9 @@ class ServicioCuentas:
         self._reloj_s = reloj_s
         # 10 cuentas por hora desde una misma IP: frena la creación masiva de cuentas.
         self._limite_registro = limite_registro or LimitadorIntentos(10, 3600)
+        # Contraseñas equivocadas: 5 por correo y 20 por IP cada 15 minutos.
+        self._fallos_correo = LimitadorIntentos(FALLOS_POR_CORREO, VENTANA_FALLOS, reloj_s)
+        self._fallos_ip = LimitadorIntentos(FALLOS_POR_IP, VENTANA_FALLOS, reloj_s)
 
     # ---------- registro ----------
 
@@ -87,4 +115,58 @@ class ServicioCuentas:
         self.actividad.registrar(usuario.id, TipoActividad.REGISTRO, cliente.ip)
         token, _ = self.sesiones.crear(usuario.id, cliente.ip, cliente.agente)
         self.actividad.registrar(usuario.id, TipoActividad.INICIO_SESION, cliente.ip, cliente.agente)
+        return usuario, token
+
+    # ---------- inicio de sesión ----------
+
+    def _comprobar_limites(self, clave_correo: str, cliente: Cliente) -> None:
+        espera = max(self._fallos_correo.espera(clave_correo), self._fallos_ip.espera(f"ip:{cliente.ip}"))
+        if espera > 0:
+            raise DemasiadosIntentosError(espera)
+
+    def _anotar_fallo(self, clave_correo: str, cliente: Cliente) -> None:
+        self._fallos_correo.registrar(clave_correo)
+        self._fallos_ip.registrar(f"ip:{cliente.ip}")
+
+    def iniciar_sesion(self, correo: str, contrasena: str, cliente: Cliente) -> ResultadoInicio:
+        """Comprueba correo y contraseña.
+
+        Mismo mensaje y mismo tiempo de respuesta exista o no el correo, para no
+        revelar quién tiene cuenta. Tras 5 fallos para un correo (o 20 desde una IP)
+        en 15 minutos, se bloquea hasta que pase la ventana, exista o no la cuenta.
+
+        Raises:
+            DemasiadosIntentosError: si está bloqueado.
+            CredencialesInvalidasError: si el correo o la contraseña no coinciden.
+        """
+        try:
+            correo = normalizar_correo(correo)
+        except DatoInvalidoError:
+            raise CredencialesInvalidasError() from None
+        clave = f"correo:{correo}"
+        self._comprobar_limites(clave, cliente)
+        credenciales = self.usuarios.credenciales_por_correo(correo)
+        if credenciales is None:
+            self._hasher.verificar_senuelo(contrasena)
+            self._anotar_fallo(clave, cliente)
+            raise CredencialesInvalidasError()
+        if not self._hasher.verificar(credenciales.contrasena_hash, contrasena):
+            self._anotar_fallo(clave, cliente)
+            self.actividad.registrar(credenciales.usuario_id, TipoActividad.INICIO_FALLIDO, cliente.ip,
+                                     cliente.agente)
+            raise CredencialesInvalidasError()
+        self._fallos_correo.reiniciar(clave)
+        if self._hasher.necesita_actualizarse(credenciales.contrasena_hash):
+            self.usuarios.cambiar_contrasena(credenciales.usuario_id, self._hasher.calcular(contrasena))
+        if credenciales.totp_activo:
+            return ResultadoInicio(token_desafio=self.sesiones.crear_desafio(credenciales.usuario_id))
+        usuario, token = self._abrir_sesion(credenciales.usuario_id, cliente)
+        return ResultadoInicio(usuario=usuario, token_sesion=token)
+
+    def _abrir_sesion(self, usuario_id: int, cliente: Cliente, detalle: str = "") -> tuple[Usuario, str]:
+        usuario = self.usuarios.por_id(usuario_id)
+        assert usuario is not None
+        token, _ = self.sesiones.crear(usuario_id, cliente.ip, cliente.agente)
+        self.actividad.registrar(usuario_id, TipoActividad.INICIO_SESION, cliente.ip,
+                                 f"{cliente.agente} {detalle}".strip())
         return usuario, token
