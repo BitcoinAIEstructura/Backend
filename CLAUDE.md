@@ -46,7 +46,7 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se�
 - [x] 2. Datos de mercado (Binance)
 - [x] 3. API HTTP (contrato en `docs/API.md`; documentación interactiva en `/docs`)
 - [x] 4. Indicadores técnicos
-- [ ] 5. Señales y backtesting (con memoria incremental: el backtest es O(n))
+- [x] 5. Señales y backtesting (con memoria incremental: el backtest es O(n))
 - [ ] 6. Simulación de operaciones
 - [ ] 7. Tiempo real y persistencia
 - [ ] 8. Docker y Railway

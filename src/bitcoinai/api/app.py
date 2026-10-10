@@ -6,6 +6,7 @@ from bitcoinai.api.configuracion import Configuracion
 from bitcoinai.api.errores import registrar_manejadores
 from bitcoinai.api.middleware import MiddlewareCors, MiddlewareErrores, MiddlewareRegistro
 from bitcoinai.api.respuestas import RespuestaJson
+from bitcoinai.api.rutas_estrategia import crear_rutas_estrategia
 from bitcoinai.api.rutas_mercado import crear_rutas_mercado
 from bitcoinai.mercado import FuenteDeMercado
 
@@ -28,6 +29,7 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado) -> FastAPI:
     )
     registrar_manejadores(app)
     app.include_router(crear_rutas_mercado(fuente, config.simbolo))
+    app.include_router(crear_rutas_estrategia(fuente, config.simbolo))
 
     # El último que se agrega queda más afuera.
     app.add_middleware(MiddlewareErrores)
