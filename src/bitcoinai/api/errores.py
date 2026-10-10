@@ -133,6 +133,10 @@ def traducir_validacion(error: Mapping[str, Any]) -> str:
         return f"El campo '{campo}' debe ser un número"
     if tipo in ("bool_type", "bool_parsing"):
         return f"El campo '{campo}' debe ser true o false"
+    if tipo == "string_too_long":
+        return f"El campo '{campo}' es demasiado largo"
+    if tipo == "extra_forbidden":
+        return f"Campo no permitido: '{campo}'"
     if tipo == "string_type":
         return f"El campo '{campo}' debe ser un texto"
     return f"Dato inválido en '{campo or 'petición'}': {mensaje}"
