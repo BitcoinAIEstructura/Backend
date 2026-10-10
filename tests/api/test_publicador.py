@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import pytest
 
 from bitcoinai.api import ApiError
-from bitcoinai.api.publicador import INICIO, LATIDO, Publicador, Suscriptor
+from bitcoinai.api.publicador import INICIO, LATIDO, Publicador, PublicadorDeUsuario, Suscriptor
 from bitcoinai.mercado import MercadoError
 from bitcoinai.simulacion import EstadoOrden, Orden, TipoOrden
 from tests.apoyo.fuente_falsa import FuenteFalsa
@@ -135,3 +135,15 @@ def test_el_hilo_publica_precio_y_latido_periodicamente(loop: asyncio.AbstractEv
 def test_maximo_invalido() -> None:
     with pytest.raises(ValueError):
         Publicador(FuenteFalsa(), "BTCUSDT", maximo=0)
+
+
+def test_eventos_privados_solo_para_su_dueno(loop: asyncio.AbstractEventLoop) -> None:
+    publicador = Publicador(FuenteFalsa(), "BTCUSDT")
+    ana, ana_telefono = publicador.suscribir(loop, usuario_id=1), publicador.suscribir(loop, usuario_id=1)
+    luis, anonimo = publicador.suscribir(loop, usuario_id=2), publicador.suscribir(loop)
+    PublicadorDeUsuario(publicador, 1).publicar("cartera", {"btc": 1})
+    publicador.publicar("precio", {"precio": 100})
+    precio = 'event: precio\ndata: {"precio":100}\n\n'
+    esperado_ana = ('event: cartera\ndata: {"btc":1}\n\n', precio)
+    assert leer_todo(loop, ana) == leer_todo(loop, ana_telefono) == esperado_ana
+    assert leer_todo(loop, luis) == leer_todo(loop, anonimo) == (precio,)

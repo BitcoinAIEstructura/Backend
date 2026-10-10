@@ -39,8 +39,10 @@ class Suscriptor:
     al encolar, se despierta a la respuesta con ``loop.call_soon_threadsafe``.
     """
 
-    def __init__(self, loop: asyncio.AbstractEventLoop, limite: int = BUZON_MAXIMO) -> None:
+    def __init__(self, loop: asyncio.AbstractEventLoop, limite: int = BUZON_MAXIMO,
+                 usuario_id: int | None = None) -> None:
         self._loop = loop
+        self.usuario_id = usuario_id  # None: anónimo, solo recibe los eventos públicos (precio)
         self._limite = limite
         self._buzon: Cola[str] = Cola()
         self._candado = threading.Lock()
@@ -173,13 +175,13 @@ class Publicador:
 
     # ---------- suscriptores ----------
 
-    def suscribir(self, loop: asyncio.AbstractEventLoop) -> Suscriptor:
-        """Registra un cliente nuevo. Complejidad: O(1).
+    def suscribir(self, loop: asyncio.AbstractEventLoop, usuario_id: int | None = None) -> Suscriptor:
+        """Registra un cliente nuevo; con ``usuario_id`` recibe además sus eventos privados. O(1).
 
         Raises:
             ApiError: 503 si ya se alcanzó el máximo de conexiones.
         """
-        suscriptor = Suscriptor(loop)
+        suscriptor = Suscriptor(loop, usuario_id=usuario_id)
         with self._candado:
             if self._suscriptores.tamanio() >= self._maximo:
                 raise ApiError(503, f"Demasiadas conexiones de tiempo real abiertas (máximo {self._maximo}); "
@@ -208,22 +210,28 @@ class Publicador:
     # ---------- publicación ----------
 
     def publicar(self, tipo: str, datos: object) -> None:
-        """Envía un evento a todos los clientes. No bloquea. Complejidad: O(n) con n clientes.
+        """Envía un evento público a todos los clientes. No bloquea. Complejidad: O(n) con n clientes.
 
         Se copia la lista con el candado tomado y se entrega sin él; a quien no pueda
         recibir se lo quita por su nodo en O(1).
         """
         self._difundir(f"event: {tipo}\ndata: {_a_texto_json(datos)}\n\n")
 
+    def publicar_a(self, usuario_id: int, tipo: str, datos: object) -> None:
+        """Envía un evento privado (sus órdenes, su cartera, su señal) solo a las conexiones de ese usuario."""
+        self._difundir(f"event: {tipo}\ndata: {_a_texto_json(datos)}\n\n", usuario_id)
+
     def enviar_latido(self) -> None:
         """Comentario de latido (las líneas que empiezan con ":" el navegador las ignora)."""
         self._difundir(LATIDO)
 
-    def _difundir(self, texto: str) -> None:
+    def _difundir(self, texto: str, usuario_id: int | None = None) -> None:
+        """A todos, o solo a los de ``usuario_id``."""
         copia: Lista[Suscriptor] = Lista()
         with self._candado:
             for suscriptor in self._suscriptores:
-                copia.agregar(suscriptor)
+                if usuario_id is None or suscriptor.usuario_id == usuario_id:
+                    copia.agregar(suscriptor)
         for suscriptor in copia:
             if not suscriptor.entregar(texto):
                 LOG.info("Cliente de tiempo real quitado: no recibe los mensajes a tiempo")
@@ -249,6 +257,21 @@ class Publicador:
                 yield mensaje
             elif suscriptor.cerrado:
                 return
+
+
+class PublicadorDeUsuario:
+    """Adaptador: un ``PublicadorEventos`` para el libro y el bot de un usuario.
+
+    El libro llama ``publicar("orden", …)`` sin saber de quién es; esto lo convierte
+    en un evento privado para ese usuario.
+    """
+
+    def __init__(self, publicador: Publicador, usuario_id: int) -> None:
+        self._publicador = publicador
+        self.usuario_id = usuario_id
+
+    def publicar(self, tipo: str, datos: object) -> None:
+        self._publicador.publicar_a(self.usuario_id, tipo, datos)
 
 
 class RespuestaStream(StreamingResponse):

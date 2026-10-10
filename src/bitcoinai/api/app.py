@@ -16,19 +16,18 @@ from bitcoinai.api.rutas_mercado import crear_rutas_mercado
 from bitcoinai.api.rutas_simulacion import crear_rutas_simulacion
 from bitcoinai.api.rutas_stream import crear_rutas_stream
 from bitcoinai.mercado import FuenteDeMercado
-from bitcoinai.simulacion import BotSimulado, LibroDeOrdenes
+from bitcoinai.simulacion import GestorSimulaciones
 from bitcoinai.usuarios.servicio import ServicioCuentas
 
 
-def crear_app(config: Configuracion, fuente: FuenteDeMercado, libro: LibroDeOrdenes | None = None,
-              bot: BotSimulado | None = None, publicador: Publicador | None = None,
-              cuentas: ServicioCuentas | None = None) -> FastAPI:
+def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Publicador | None = None,
+              cuentas: ServicioCuentas | None = None, gestor: GestorSimulaciones | None = None) -> FastAPI:
     """Crea la API con sus dependencias (en las pruebas, una ``FuenteFalsa``).
 
     - Todas las respuestas son ``application/json; charset=utf-8``, incluidos los errores.
     - Middlewares, de afuera hacia adentro: registro → seguridad → CORS → errores.
-    - Los endpoints de la simulación se registran si se pasan ``libro`` y ``bot``;
-      al apagar el servidor se detiene el bot.
+    - Los endpoints de la simulación (de cada usuario) se registran si se pasan
+      ``cuentas`` y ``gestor``; al apagar el servidor se detienen todos los bots.
     - ``GET /api/stream`` se registra si se pasa un ``publicador``; se inicia al
       arrancar y al apagar cierra las conexiones abiertas.
     - Los endpoints de cuentas y sesión se registran si se pasa ``cuentas``.
@@ -40,8 +39,8 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, libro: LibroDeOrde
         if publicador is not None:
             publicador.iniciar()
         yield
-        if bot is not None:
-            bot.detener()
+        if gestor is not None:
+            gestor.detener_todos()
         if publicador is not None:
             publicador.detener()
 
@@ -57,14 +56,13 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, libro: LibroDeOrde
     registrar_manejadores(app)
     app.include_router(crear_rutas_mercado(fuente, config.simbolo))
     app.include_router(crear_rutas_estrategia(fuente, config.simbolo))
-    if libro is not None and bot is not None:
-        app.include_router(crear_rutas_simulacion(libro, bot))
+    if gestor is not None and cuentas is not None:
+        app.include_router(crear_rutas_simulacion(gestor, cuentas, config))
     if publicador is not None:
-        app.include_router(crear_rutas_stream(publicador))
+        app.include_router(crear_rutas_stream(publicador, cuentas, config))
     if cuentas is not None:
         app.include_router(crear_rutas_cuentas(cuentas, config))
-    app.state.libro, app.state.bot, app.state.publicador = libro, bot, publicador
-    app.state.cuentas = cuentas
+    app.state.publicador, app.state.cuentas, app.state.gestor = publicador, cuentas, gestor
 
     # El último que se agrega queda más afuera.
     app.add_middleware(MiddlewareErrores)

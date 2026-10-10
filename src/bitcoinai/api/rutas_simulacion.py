@@ -6,23 +6,29 @@
 - GET /api/cartera, GET /api/historial?limite=50
 - POST /api/bot/iniciar, POST /api/bot/detener, GET /api/bot/estado
 
+Cada usuario tiene su propia simulación (cartera, órdenes, historial y bot): todos
+estos endpoints exigen sesión (401 sin ella) y trabajan sobre la del usuario.
+
 Errores del dominio (ver ``errores.py``): orden inexistente → 404; operación que el
 estado no permite → 409; datos inválidos → 400.
 """
 
 from typing import Any, Self
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from bitcoinai.api.configuracion import Configuracion
 from bitcoinai.api.errores import ApiError
+from bitcoinai.api.rutas_cuentas import Cookies, sesion_de
 from bitcoinai.api.serializacion import (
     bot_a_json,
     cartera_a_json,
     evento_a_json,
     orden_a_json,
 )
-from bitcoinai.simulacion import BotSimulado, ConfiguracionBot, EstadoOrden, LibroDeOrdenes, TipoOrden
+from bitcoinai.simulacion import ConfiguracionBot, EstadoOrden, GestorSimulaciones, LibroDeOrdenes, TipoOrden
+from bitcoinai.usuarios.servicio import ServicioCuentas
 
 MONTO_MAXIMO = 1_000_000_000
 LIMITE_HISTORIAL_POR_DEFECTO = 50
@@ -76,20 +82,36 @@ class CuerpoBot(BaseModel):
     take_profit: float | None = Field(None, alias="takeProfit")
 
 
-def crear_rutas_simulacion(libro: LibroDeOrdenes, bot: BotSimulado) -> APIRouter:
-    """Crea el router con los endpoints de la simulación."""
-    rutas = APIRouter()
+def crear_rutas_simulacion(gestor: GestorSimulaciones, cuentas: ServicioCuentas, config: Configuracion) -> APIRouter:
+    """Crea el router con los endpoints de la simulación de cada usuario."""
+    cookies = Cookies(config)
+
+    def exigir_sesion(peticion: Request) -> None:
+        """Dependencia de todo el router: comprueba la sesión antes de validar el cuerpo (401 primero)."""
+        usuario, _ = sesion_de(peticion, cuentas, cookies)
+        peticion.state.usuario_id = usuario.id
+
+    rutas = APIRouter(dependencies=[Depends(exigir_sesion)])
+
+    def usuario_id(peticion: Request) -> int:
+        valor: int = peticion.state.usuario_id
+        return valor
+
+    def libro_de(peticion: Request) -> LibroDeOrdenes:
+        return gestor.libro(usuario_id(peticion))
 
     @rutas.post("/api/ordenes", status_code=201)
-    def crear(cuerpo: CuerpoOrden) -> dict[str, Any]:
+    def crear(cuerpo: CuerpoOrden, peticion: Request) -> dict[str, Any]:
         """Crea una orden pendiente."""
+        libro = libro_de(peticion)
         tipo = TipoOrden[(cuerpo.tipo or "").strip().upper()]
         orden = libro.crear_orden(tipo, cuerpo.monto, cuerpo.todo, cuerpo.motivo)
         return orden_a_json(orden)
 
     @rutas.get("/api/ordenes")
-    def listar(estado: str = "") -> dict[str, Any]:
+    def listar(peticion: Request, estado: str = "") -> dict[str, Any]:
         """Órdenes: pendientes en orden de cola, la que se procesa y el registro."""
+        libro = libro_de(peticion)
         filtro = None
         if estado:
             try:
@@ -101,39 +123,40 @@ def crear_rutas_simulacion(libro: LibroDeOrdenes, bot: BotSimulado) -> APIRouter
         return {"cantidad": ordenes.tamanio(), "ordenes": [orden_a_json(o) for o in ordenes]}
 
     @rutas.post("/api/ordenes/procesar")
-    def procesar() -> dict[str, Any]:
+    def procesar(peticion: Request) -> dict[str, Any]:
         """Ejecuta la orden del frente de la cola."""
-        orden = libro.procesar_siguiente()
+        orden = libro_de(peticion).procesar_siguiente()
         if orden is None:
             raise ApiError(409, "No hay órdenes pendientes para procesar")
         return orden_a_json(orden)
 
     @rutas.post("/api/ordenes/deshacer")
-    def deshacer() -> dict[str, Any]:
+    def deshacer(peticion: Request) -> dict[str, Any]:
         """Deshace la última orden creada si sigue pendiente."""
-        orden = libro.deshacer_ultima_orden()
+        orden = libro_de(peticion).deshacer_ultima_orden()
         if orden is None:
             raise ApiError(409, "No hay una orden reciente pendiente que deshacer")
         return orden_a_json(orden)
 
     @rutas.get("/api/ordenes/{id_orden}")
-    def obtener(id_orden: str) -> dict[str, Any]:
+    def obtener(id_orden: str, peticion: Request) -> dict[str, Any]:
         """Una orden por id."""
-        return orden_a_json(libro.obtener(leer_id(id_orden)))
+        return orden_a_json(libro_de(peticion).obtener(leer_id(id_orden)))
 
     @rutas.delete("/api/ordenes/{id_orden}")
-    def cancelar(id_orden: str) -> dict[str, Any]:
+    def cancelar(id_orden: str, peticion: Request) -> dict[str, Any]:
         """Cancela una orden pendiente."""
-        return orden_a_json(libro.cancelar(leer_id(id_orden)))
+        return orden_a_json(libro_de(peticion).cancelar(leer_id(id_orden)))
 
     @rutas.get("/api/cartera")
-    def cartera() -> dict[str, Any]:
+    def cartera(peticion: Request) -> dict[str, Any]:
         """Cartera valorada al precio actual."""
-        return cartera_a_json(libro.estado_cartera())
+        return cartera_a_json(libro_de(peticion).estado_cartera())
 
     @rutas.get("/api/historial")
-    def historial(limite: str = "") -> dict[str, Any]:
+    def historial(peticion: Request, limite: str = "") -> dict[str, Any]:
         """Eventos del más reciente al más viejo."""
+        libro = libro_de(peticion)
         texto = limite or str(LIMITE_HISTORIAL_POR_DEFECTO)
         try:
             valor = int(texto.strip())
@@ -145,24 +168,25 @@ def crear_rutas_simulacion(libro: LibroDeOrdenes, bot: BotSimulado) -> APIRouter
         return {"eventos": [evento_a_json(e) for e in libro.historial(valor)]}
 
     @rutas.post("/api/bot/iniciar")
-    def iniciar_bot(cuerpo: CuerpoBot | None = None) -> dict[str, Any]:
-        """Pone en marcha el bot (configuración opcional en el cuerpo)."""
+    def iniciar_bot(peticion: Request, cuerpo: CuerpoBot | None = None) -> dict[str, Any]:
+        """Pone en marcha el bot del usuario (configuración opcional en el cuerpo)."""
+        usuario = usuario_id(peticion)
         datos = cuerpo.model_dump(exclude_none=True) if cuerpo is not None else {}
         try:
             configuracion = ConfiguracionBot(**datos)
         except ValueError as error:
             raise ApiError(400, str(error)) from None
-        return bot_a_json(bot.iniciar(configuracion))
+        return bot_a_json(gestor.iniciar_bot(usuario, configuracion))
 
     @rutas.post("/api/bot/detener")
-    def detener_bot() -> dict[str, Any]:
+    def detener_bot(peticion: Request) -> dict[str, Any]:
         """Detiene el bot (si ya estaba detenido, no hace nada)."""
-        return bot_a_json(bot.detener())
+        return bot_a_json(gestor.bot(usuario_id(peticion)).detener())
 
     @rutas.get("/api/bot/estado")
-    def estado_bot() -> dict[str, Any]:
+    def estado_bot(peticion: Request) -> dict[str, Any]:
         """Estado del bot y su última decisión."""
-        return bot_a_json(bot.estado())
+        return bot_a_json(gestor.bot(usuario_id(peticion)).estado())
 
     return rutas
 

@@ -12,7 +12,8 @@ def test_crea_todas_las_tablas_una_sola_vez() -> None:
     bd = BaseDatos(":memory:")
     assert version_actual(bd) == 0
     assert migrar(bd) == len(MIGRACIONES)
-    assert {"usuarios", "codigos_respaldo", "sesiones", "desafios", "actividad"} <= tablas(bd)
+    assert {"usuarios", "codigos_respaldo", "sesiones", "desafios", "actividad", "simulaciones", "ordenes",
+            "ordenes_creadas", "eventos_simulacion"} <= tablas(bd)
     assert version_actual(bd) == MIGRACIONES[-1].version
     assert migrar(bd) == 0  # la segunda vez no hay nada pendiente
 

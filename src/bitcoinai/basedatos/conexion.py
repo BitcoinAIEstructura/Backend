@@ -2,7 +2,7 @@
 
 import sqlite3
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -50,6 +50,11 @@ class BaseDatos:
         with self._candado:
             cursor = self._conexion.execute(sql, parametros)
             return cursor.lastrowid or 0
+
+    def ejecutar_muchos(self, sql: str, filas: Iterable[Parametros]) -> None:
+        """La misma instrucción con muchas filas de parámetros (mucho más rápido que una por una)."""
+        with self._candado:
+            self._conexion.executemany(sql, filas)
 
     def contar_cambios(self, sql: str, parametros: Parametros = ()) -> int:
         """Ejecuta un UPDATE o DELETE y devuelve cuántas filas cambió."""

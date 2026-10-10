@@ -79,6 +79,58 @@ MIGRACIONES: tuple[Migracion, ...] = (
         )""",
         "CREATE INDEX actividad_usuario ON actividad(usuario_id, momento)",
     )),
+    Migracion(2, "simulación de cada usuario: cartera, órdenes, ids creados e historial", (
+        # Una fila por usuario con su cartera y el próximo id de orden. Sirve también
+        # para comparar la rentabilidad de todos (liga de inversores).
+        """CREATE TABLE simulaciones (
+            usuario_id INTEGER PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+            saldo_inicial REAL NOT NULL,
+            saldo_usdt REAL NOT NULL,
+            btc REAL NOT NULL,
+            costo_posicion REAL NOT NULL,
+            ganancia_realizada REAL NOT NULL,
+            comisiones_pagadas REAL NOT NULL,
+            siguiente_id INTEGER NOT NULL,
+            actualizado_en INTEGER NOT NULL
+        )""",
+        # "lugar" dice en qué estructura estaba: la cola de pendientes o el registro;
+        # "posicion" guarda el orden dentro de ella, para reconstruirla igual.
+        """CREATE TABLE ordenes (
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            id INTEGER NOT NULL,
+            lugar TEXT NOT NULL CHECK (lugar IN ('pendiente', 'registro')),
+            posicion INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+            monto REAL,
+            todo INTEGER NOT NULL,
+            estado TEXT NOT NULL,
+            creada_en INTEGER NOT NULL,
+            ejecutada_en INTEGER,
+            precio_ejecucion REAL,
+            cantidad_btc REAL,
+            comision REAL,
+            motivo TEXT NOT NULL,
+            detalle TEXT,
+            PRIMARY KEY (usuario_id, id)
+        )""",
+        # Pila de ids en orden de creación (para deshacer): posición 0 es el fondo.
+        """CREATE TABLE ordenes_creadas (
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            posicion INTEGER NOT NULL,
+            id_orden INTEGER NOT NULL,
+            PRIMARY KEY (usuario_id, posicion)
+        )""",
+        # Pila del historial: posición 0 es el evento más viejo.
+        """CREATE TABLE eventos_simulacion (
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            posicion INTEGER NOT NULL,
+            momento INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+            id_orden INTEGER,
+            descripcion TEXT NOT NULL,
+            PRIMARY KEY (usuario_id, posicion)
+        )""",
+    )),
 )
 
 

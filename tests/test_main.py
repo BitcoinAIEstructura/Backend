@@ -18,15 +18,19 @@ def test_construir_arma_la_app_con_health_disponible_sin_consultar_binance(tmp_p
     assert isinstance(app.state.publicador, Publicador)
 
 
-def test_la_simulacion_sobrevive_a_un_reinicio(tmp_path: Path) -> None:
+def test_la_simulacion_de_cada_usuario_sobrevive_a_un_reinicio(tmp_path: Path) -> None:
     config = Configuracion(data_dir=str(tmp_path))
-    with TestClient(construir(config)) as cliente:
+    hasher = HashContrasenas(PARAMETROS_RAPIDOS_PARA_PRUEBAS)
+    with TestClient(construir(config, hasher)) as cliente:
+        assert cliente.post("/api/cuentas/registro", json=REGISTRO).status_code == 201
         assert cliente.post("/api/ordenes", json={"tipo": "COMPRA", "monto": 100}).status_code == 201
         assert cliente.post("/api/ordenes", json={"tipo": "COMPRA", "monto": 200}).status_code == 201
         assert cliente.delete("/api/ordenes/1").status_code == 200
-    assert (tmp_path / "ordenes.json").exists()
+    assert not (tmp_path / "ordenes.json").exists()  # ahora va a la base de datos, no a archivos JSON
 
-    with TestClient(construir(config)) as cliente:  # "reinicio": app nueva, mismos archivos
+    with TestClient(construir(config, hasher)) as cliente:  # "reinicio": app nueva, misma base
+        r = cliente.post("/api/sesion", json={"correo": "ana@correo.co", "contrasena": REGISTRO["contrasena"]})
+        assert r.status_code == 200
         ordenes = cliente.get("/api/ordenes").json()["ordenes"]
         assert [(o["id"], o["estado"]) for o in ordenes] == [(2, "PENDIENTE"), (1, "CANCELADA")]
         assert cliente.get("/api/historial?limite=1").json()["eventos"][0]["tipo"] == "ORDEN_CANCELADA"

@@ -4,7 +4,7 @@ Backend de un proyecto universitario de **Estructuras de Datos**: un bot que ana
 
 - Obtiene velas reales de la API pública de Binance.
 - Calcula indicadores técnicos (SMA, EMA, RSI, MACD, Bollinger, volatilidad).
-- Genera señales con varias estrategias, las prueba con datos históricos (backtesting con validación entrenamiento/prueba) y simula operaciones con una cartera ficticia y un bot.
+- Genera señales con varias estrategias, las prueba con datos históricos (backtesting con validación entrenamiento/prueba) y simula operaciones: cada usuario tiene su propia cartera ficticia, sus órdenes y su bot.
 - Expone todo por HTTP, con eventos en tiempo real (SSE).
 - Cuentas de usuario seguras: registro con cédula (CC o CE), contraseñas con Argon2id, datos personales cifrados, verificación en dos pasos con Google Authenticator y centro de seguridad. Ver [docs/SEGURIDAD.md](docs/SEGURIDAD.md).
 
@@ -82,6 +82,7 @@ Ninguna es obligatoria. La única secreta es `CLAVE_CIFRADO`. Hay un ejemplo com
 | `SIMBOLO` | `BTCUSDT` | Par de mercado. |
 | `DATA_DIR` | `./data` | Carpeta donde se guarda la simulación (cartera, órdenes e historial). |
 | `MAX_STREAMS` | `50` | Conexiones simultáneas permitidas a `/api/stream` (entre 1 y 10 000). |
+| `MAX_BOTS` | `20` | Bots simulados encendidos a la vez entre todos los usuarios. |
 | `BASE_DATOS` | `<DATA_DIR>/bitcoinai.db` | Archivo SQLite de usuarios, sesiones y actividad. |
 | `CLAVE_CIFRADO` | (se genera una local) | **Secreta.** 32 bytes en base64 para cifrar los datos personales. Si falta, se crea `data/clave-cifrado.key`. |
 | `COOKIE_SEGURA` | `false` | `true` con HTTPS: cookie `Secure` con prefijo `__Host-` y HSTS. |
@@ -149,7 +150,7 @@ Detalle, parámetros y ejemplos en [docs/API.md](docs/API.md).
 | `GET /api/indicadores?indicador=rsi&periodo=14` | Indicador técnico: sma, ema, rsi, macd, bollinger, volatilidad |
 | `GET /api/senal?estrategia=combinada` | Decisión más reciente y pronóstico de una estrategia |
 | `GET /api/backtest?estrategia=cruce&capital=1000` | Backtest y validación entrenamiento/prueba (70/30) |
-| `POST /api/ordenes` | Crea una orden simulada `{"tipo":"COMPRA","monto":500}` |
+| `POST /api/ordenes` | Crea una orden simulada `{"tipo":"COMPRA","monto":500}`. Órdenes, cartera, historial y bot son de cada usuario y exigen sesión |
 | `GET /api/ordenes?estado=PENDIENTE` | Lista órdenes |
 | `GET /api/ordenes/{id}` | Una orden |
 | `DELETE /api/ordenes/{id}` | Cancela una orden pendiente |
