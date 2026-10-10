@@ -42,7 +42,7 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se�
 - No hacer commit ni push salvo que el usuario lo pida.
 
 ## Fases
-- [ ] 1. Estructuras de datos (ver `docs/ESTRUCTURAS.md`)
+- [x] 1. Estructuras de datos (ver `docs/ESTRUCTURAS.md`)
 - [ ] 2. Datos de mercado (Binance)
 - [ ] 3. API HTTP (contrato en `docs/API.md`; documentación interactiva en `/docs`)
 - [ ] 4. Indicadores técnicos
