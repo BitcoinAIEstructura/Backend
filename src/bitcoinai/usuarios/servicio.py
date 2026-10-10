@@ -14,11 +14,12 @@ from bitcoinai.seguridad import totp
 from bitcoinai.seguridad.cifrado import Cifrador
 from bitcoinai.seguridad.contrasenas import HashContrasenas
 from bitcoinai.seguridad.limitador import LimitadorIntentos
+from bitcoinai.seguridad.politica import problemas_contrasena
 from bitcoinai.seguridad.respaldo import generar_codigos, hash_codigo
-from bitcoinai.usuarios.actividad import RegistroActividad, TipoActividad
+from bitcoinai.usuarios.actividad import EventoActividad, RegistroActividad, TipoActividad
 from bitcoinai.usuarios.modelo import Credenciales, DatosRegistro, Usuario
 from bitcoinai.usuarios.repositorio import RepositorioUsuarios, UsuarioDuplicadoError
-from bitcoinai.usuarios.sesiones import RepositorioSesiones
+from bitcoinai.usuarios.sesiones import RepositorioSesiones, Sesion
 from bitcoinai.usuarios.validacion import DatoInvalidoError, normalizar_correo
 
 FALLOS_POR_CORREO = 5
@@ -63,6 +64,11 @@ class CodigoInvalidoError(CuentaError):
 class DesafioVencidoError(CuentaError):
     def __init__(self) -> None:
         super().__init__("El inicio de sesión venció o tuvo demasiados intentos; vuelve a escribir tu contraseña")
+
+
+class SesionInvalidaError(CuentaError):
+    def __init__(self) -> None:
+        super().__init__("Tu sesión terminó; vuelve a iniciar sesión")
 
 
 class OperacionCuentaError(CuentaError):
@@ -313,3 +319,71 @@ class ServicioCuentas:
         self._exigir_codigo(credenciales, codigo, cliente)
         self.actividad.registrar(usuario_id, TipoActividad.CODIGOS_REGENERADOS, cliente.ip)
         return self._nuevos_codigos(usuario_id)
+
+    # ---------- sesiones ----------
+
+    def sesion_actual(self, token: str | None) -> tuple[Usuario, Sesion]:
+        """El usuario y la sesión del token de la cookie.
+
+        Raises:
+            SesionInvalidaError: si no hay token, venció o se cerró.
+        """
+        sesion = None if not token else self.sesiones.validar(token)
+        usuario = None if sesion is None else self.usuarios.por_id(sesion.usuario_id)
+        if sesion is None or usuario is None:
+            raise SesionInvalidaError()
+        return usuario, sesion
+
+    def cerrar_sesion(self, token: str, cliente: Cliente) -> None:
+        sesion = self.sesiones.validar(token)
+        if sesion is not None and self.sesiones.cerrar_token(token):
+            self.actividad.registrar(sesion.usuario_id, TipoActividad.CIERRE_SESION, cliente.ip)
+
+    def sesiones_activas(self, usuario_id: int) -> Lista[Sesion]:
+        return self.sesiones.activas(usuario_id)
+
+    def cerrar_otra_sesion(self, usuario_id: int, sesion_id: int, cliente: Cliente) -> None:
+        """Cierra una sesión propia por su id (por ejemplo, la de un dispositivo perdido)."""
+        if not self.sesiones.cerrar(usuario_id, sesion_id):
+            raise OperacionCuentaError("No existe una sesión abierta con ese id")
+        self.actividad.registrar(usuario_id, TipoActividad.SESIONES_CERRADAS, cliente.ip, f"Sesión {sesion_id}")
+
+    def cerrar_otras_sesiones(self, usuario_id: int, actual: int, cliente: Cliente) -> int:
+        """Cierra todas las sesiones menos la actual. Returns: cuántas cerró."""
+        cerradas = self.sesiones.cerrar_todas(usuario_id, excepto=actual)
+        if cerradas:
+            self.actividad.registrar(usuario_id, TipoActividad.SESIONES_CERRADAS, cliente.ip, f"{cerradas} sesiones")
+        return cerradas
+
+    def actividad_reciente(self, usuario_id: int, limite: int = 50) -> Lista[EventoActividad]:
+        return self.actividad.recientes(usuario_id, limite)
+
+    # ---------- contraseña ----------
+
+    def cambiar_contrasena(self, usuario_id: int, actual: str, nueva: str, sesion_actual: int,
+                           cliente: Cliente) -> None:
+        """Cambia la contraseña y cierra las demás sesiones (por si alguien más la conocía).
+
+        Raises:
+            CredencialesInvalidasError: si la contraseña actual no coincide.
+            DatoInvalidoError: si la nueva no cumple la política o es igual a la actual.
+        """
+        credenciales = self._credenciales(usuario_id)
+        clave = f"contrasena:{usuario_id}"
+        espera = self._fallos_codigo.espera(clave)
+        if espera > 0:
+            raise DemasiadosIntentosError(espera)
+        if not self._hasher.verificar(credenciales.contrasena_hash, actual):
+            self._fallos_codigo.registrar(clave)
+            raise CredencialesInvalidasError()
+        if nueva == actual:
+            raise DatoInvalidoError("contrasenaNueva", "La contraseña nueva debe ser distinta de la actual")
+        usuario = self.usuarios.por_id(usuario_id)
+        assert usuario is not None
+        problemas = problemas_contrasena(nueva, (usuario.nombre, usuario.apellido, usuario.correo,
+                                                 usuario.numero_documento))
+        if not problemas.esta_vacia():
+            raise DatoInvalidoError("contrasenaNueva", problemas.primero())
+        self.usuarios.cambiar_contrasena(usuario_id, self._hasher.calcular(nueva))
+        self.sesiones.cerrar_todas(usuario_id, excepto=sesion_actual)
+        self.actividad.registrar(usuario_id, TipoActividad.CONTRASENA_CAMBIADA, cliente.ip)
