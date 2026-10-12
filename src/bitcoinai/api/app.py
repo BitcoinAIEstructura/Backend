@@ -10,6 +10,7 @@ from bitcoinai.api.errores import registrar_manejadores
 from bitcoinai.api.middleware import MiddlewareCors, MiddlewareErrores, MiddlewareRegistro, MiddlewareSeguridad
 from bitcoinai.api.publicador import Publicador
 from bitcoinai.api.respuestas import RespuestaJson
+from bitcoinai.api.rutas_busqueda import crear_rutas_busqueda
 from bitcoinai.api.rutas_cuentas import crear_rutas_cuentas
 from bitcoinai.api.rutas_estrategia import crear_rutas_estrategia
 from bitcoinai.api.rutas_liga import crear_rutas_liga
@@ -65,6 +66,7 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
         publicador.usar_recientes(recientes)
     app.include_router(crear_rutas_mercado(fuente, config.simbolo, recientes))
     app.include_router(crear_rutas_estrategia(fuente, config.simbolo))
+    app.include_router(crear_rutas_busqueda())
     if gestor is not None and cuentas is not None:
         app.include_router(crear_rutas_simulacion(gestor, cuentas, config))
     if publicador is not None:

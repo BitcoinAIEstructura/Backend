@@ -96,6 +96,21 @@ def test_si_hubiera_con_datos_invalidos(cliente: TestClient, fecha: str, monto: 
     assert_error(cliente.get("/api/si-hubiera", params={"fecha": fecha, "monto": monto}), 400, fragmento)
 
 
+def test_buscar_por_prefijo(cliente: TestClient) -> None:
+    cuerpo = cliente.get("/api/buscar", params={"q": "órde"}).json()
+    assert cuerpo["resultados"][0] == {"id": "ordenes", "titulo": "Órdenes",
+                                       "descripcion": "Comprar, vender y la cola de pendientes",
+                                       "ruta": "/ordenes", "tipo": "pagina"}
+    assert cuerpo["nodosTrie"] > cuerpo["palabrasIndexadas"] > 0
+    assert len(cliente.get("/api/buscar", params={"q": "estructura", "limite": "2"}).json()["resultados"]) == 2
+    assert cliente.get("/api/buscar").json()["resultados"] == []
+
+
+def test_buscar_con_parametros_invalidos(cliente: TestClient) -> None:
+    assert_error(cliente.get("/api/buscar", params={"q": "x" * 61}), 400, "demasiado larga")
+    assert_error(cliente.get("/api/buscar", params={"q": "bot", "limite": "50"}), 400, "limite")
+
+
 def test_velas_con_parametros(cliente: TestClient) -> None:
     r = cliente.get("/api/velas?intervalo=1d&cantidad=5")
     assert r.status_code == 200

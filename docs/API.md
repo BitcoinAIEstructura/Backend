@@ -204,6 +204,28 @@ Errores de ejemplo (400; se valida todo antes de consultar Binance):
 
 Si la fecha es anterior a los datos, responde `400` con el día desde el que hay datos: `"Esa fecha es anterior a los datos disponibles. Hay datos desde el 2024-01-17."`.
 
+### `GET /api/buscar`
+
+La búsqueda de **Ctrl + K**: páginas, acciones, indicadores y conceptos de la plataforma. Es pública, porque el catálogo no tiene nada privado.
+
+| Parámetro | Valores | Ejemplo |
+| --- | --- | --- |
+| `q` | Texto de hasta 60 caracteres | `órde` |
+| `limite` | Entero entre 1 y 20 (por defecto 8) | `5` |
+
+**Cómo funciona:**
+- Cada palabra del catálogo, en minúsculas y sin tildes, está en un **trie**. Por eso no importa cómo se escriba: "ÓRDE" encuentra "Órdenes".
+- Cada palabra de `q` se toma como prefijo, y una entrada aparece solo si coincide con todas.
+- Una **tabla hash** junta los resultados sin repetirlos.
+- Primero salen las entradas que coinciden en el título.
+
+```json
+{"consulta":"órde","resultados":[{"id":"ordenes","titulo":"Órdenes","descripcion":"Comprar, vender y la cola de pendientes","ruta":"/ordenes","tipo":"pagina"}],
+ "palabrasIndexadas":222,"nodosTrie":886}
+```
+
+`tipo` es `pagina`, `accion`, `indicador` o `concepto`. `nodosTrie` es menor que la suma de las letras de todas las palabras, porque las que empiezan igual comparten nodos.
+
 ## Estrategias, señales y backtest
 
 > **Aviso:** Resultado de pruebas con datos históricos; no es asesoría financiera ni garantiza ganancias. Ese texto viaja en el campo `aviso` de cada pronóstico y de cada backtest.
