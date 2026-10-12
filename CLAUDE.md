@@ -14,7 +14,7 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se�
 - **Todo es simulado:** nunca se conecta a una cuenta real de un exchange ni usa claves de API de exchanges. Solo lee datos públicos de mercado.
 
 ## Estructuras de datos
-- `Lista`, `ListaDoble`, `Cola` y `Pila` se implementan a mano con nodos enlazados.
+- `Lista`, `ListaDoble`, `Cola`, `Pila`, `ArbolAVL` y `Trie` se implementan a mano con nodos enlazados; `Monticulo`, `ColaCircular` y `TablaHash`, sobre `Arreglo` (tamaño fijo, con `ctypes`, como `new T[n]` en Java).
 - Prohibido usar `list`, `collections.deque`, `queue.Queue` o `heapq` como estructura en la lógica del proyecto. Única excepción, los bordes con JSON: el módulo `json` entrega los arreglos como `list` (respuestas de Binance, archivos guardados) y FastAPI necesita `list` para escribir la respuesta. Ahí se lee o se arma la `list` y enseguida se pasa a (o desde) nuestras estructuras.
 - `dict` sí se permite para mapas (como `Map` en Java): objetos JSON, cachés y parámetros.
 - Nombres de clases y métodos en español; funciones y métodos en snake_case (`agregar_final`, `esta_vacia`).
@@ -26,7 +26,7 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se�
 - La guía de prompts está en `docs/GUIA-MIGRACION-PYTHON.md`.
 
 ## Paquetes (bajo `src/bitcoinai`)
-`estructuras`, `modelo`, `mercado`, `indicadores`, `estrategia`, `simulacion`, `api`, `persistencia`, `basedatos`, `seguridad`, `usuarios`. Pruebas en `tests/`.
+`estructuras`, `modelo`, `mercado`, `indicadores`, `estrategia`, `simulacion`, `api`, `persistencia`, `basedatos`, `seguridad`, `usuarios`, `busqueda`. Pruebas en `tests/`.
 
 ## Comandos
 - Crear el entorno (una vez): `py -3.13 -m venv .venv`
