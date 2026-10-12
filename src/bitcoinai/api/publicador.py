@@ -15,7 +15,7 @@ from bitcoinai.api.errores import ApiError
 from bitcoinai.api.serializacion import cartera_a_json, decision_a_json, orden_a_json
 from bitcoinai.estrategia import Decision
 from bitcoinai.estructuras import Cola, Lista, ListaDoble, NodoDoble
-from bitcoinai.mercado import FuenteDeMercado
+from bitcoinai.mercado import FuenteDeMercado, PreciosRecientes
 from bitcoinai.simulacion import EstadoCartera, Orden
 
 MAXIMO_POR_DEFECTO = 50
@@ -139,6 +139,11 @@ class Publicador:
         self._suscriptores: ListaDoble[Suscriptor] = ListaDoble()
         self._candado = threading.Lock()
         self._parar: threading.Event | None = None
+        self._recientes: PreciosRecientes | None = None
+
+    def usar_recientes(self, recientes: PreciosRecientes) -> None:
+        """Cada precio publicado se anota también en la cola circular de precios recientes."""
+        self._recientes = recientes
 
     # ---------- ciclo de vida ----------
 
@@ -246,7 +251,10 @@ class Publicador:
         except Exception as error:
             LOG.debug("No se pudo publicar el precio: %s", error)
             return
-        self.publicar("precio", {"simbolo": self._simbolo, "precio": precio, "momento": int(time.time() * 1000)})
+        momento = int(time.time() * 1000)
+        if self._recientes is not None:
+            self._recientes.registrar(momento, precio)
+        self.publicar("precio", {"simbolo": self._simbolo, "precio": precio, "momento": momento})
 
     async def mensajes(self, suscriptor: Suscriptor) -> AsyncIterator[str]:
         """Lo que se le escribe a un cliente: el saludo y después lo que llegue a su buzón."""

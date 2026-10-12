@@ -15,7 +15,7 @@ from bitcoinai.api.rutas_estrategia import crear_rutas_estrategia
 from bitcoinai.api.rutas_mercado import crear_rutas_mercado
 from bitcoinai.api.rutas_simulacion import crear_rutas_simulacion
 from bitcoinai.api.rutas_stream import crear_rutas_stream
-from bitcoinai.mercado import FuenteDeMercado
+from bitcoinai.mercado import FuenteDeMercado, PreciosRecientes
 from bitcoinai.simulacion import GestorSimulaciones
 from bitcoinai.usuarios.servicio import ServicioCuentas
 
@@ -54,7 +54,11 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
         lifespan=ciclo_de_vida,
     )
     registrar_manejadores(app)
-    app.include_router(crear_rutas_mercado(fuente, config.simbolo))
+    # Los últimos precios (cola circular): los anotan /api/precio y el tiempo real.
+    recientes = PreciosRecientes()
+    if publicador is not None:
+        publicador.usar_recientes(recientes)
+    app.include_router(crear_rutas_mercado(fuente, config.simbolo, recientes))
     app.include_router(crear_rutas_estrategia(fuente, config.simbolo))
     if gestor is not None and cuentas is not None:
         app.include_router(crear_rutas_simulacion(gestor, cuentas, config))

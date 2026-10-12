@@ -61,6 +61,16 @@ def test_precio_devuelve_simbolo_precio_y_momento(cliente: TestClient, fuente: F
     assert cuerpo["momento"] >= antes
 
 
+def test_precios_recientes_se_llenan_con_cada_precio_pedido(cliente: TestClient) -> None:
+    vacio = cliente.get("/api/precio/recientes").json()
+    assert vacio == {"simbolo": "BTCUSDT", "capacidad": 120, "cantidad": 0, "precios": []}
+    momento = cliente.get("/api/precio").json()["momento"]
+    cliente.get("/api/precio")  # muy seguido: no se repite
+    lleno = cliente.get("/api/precio/recientes").json()
+    assert lleno["cantidad"] == 1
+    assert lleno["precios"] == [{"momento": momento, "precio": lleno["precios"][0]["precio"]}]
+
+
 def test_velas_con_parametros(cliente: TestClient) -> None:
     r = cliente.get("/api/velas?intervalo=1d&cantidad=5")
     assert r.status_code == 200

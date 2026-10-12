@@ -1,4 +1,4 @@
-"""Endpoints de mercado: /health, /api/precio, /api/velas y /api/indicadores.
+"""Endpoints de mercado: /health, /api/precio, /api/precio/recientes, /api/velas y /api/indicadores.
 
 Los endpoints solo traducen: leen y validan parámetros, llaman al dominio y
 arman el JSON del contrato. Son funciones normales (no async): FastAPI las
@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 from bitcoinai.api.errores import ApiError
 from bitcoinai.api.serializacion import caida_a_json, series_a_json, velas_a_json
 from bitcoinai.indicadores import crear_indicador, maxima_caida_de_velas
-from bitcoinai.mercado import FuenteDeMercado
+from bitcoinai.mercado import FuenteDeMercado, PreciosRecientes
 from bitcoinai.modelo import Intervalo
 
 CANTIDAD_MAXIMA = 1000
@@ -21,9 +21,11 @@ INTERVALO_POR_DEFECTO = "1d"
 CANTIDAD_POR_DEFECTO = 200
 
 
-def crear_rutas_mercado(fuente: FuenteDeMercado, simbolo: str) -> APIRouter:
+def crear_rutas_mercado(fuente: FuenteDeMercado, simbolo: str,
+                        recientes: PreciosRecientes | None = None) -> APIRouter:
     """Crea el router con los endpoints de mercado."""
     rutas = APIRouter()
+    precios_recientes = recientes or PreciosRecientes()
 
     @rutas.get("/health")
     def salud() -> dict[str, Any]:
@@ -34,7 +36,24 @@ def crear_rutas_mercado(fuente: FuenteDeMercado, simbolo: str) -> APIRouter:
     def precio() -> dict[str, Any]:
         """Último precio negociado del símbolo configurado."""
         valor = fuente.obtener_precio_actual(simbolo)
-        return {"simbolo": simbolo, "precio": valor, "momento": int(time.time() * 1000)}
+        momento = int(time.time() * 1000)
+        precios_recientes.registrar(momento, valor)
+        return {"simbolo": simbolo, "precio": valor, "momento": momento}
+
+    @rutas.get("/api/precio/recientes")
+    def recientes_() -> dict[str, Any]:
+        """Los últimos precios que pasaron por el servidor (cola circular de 120), del más viejo al más nuevo.
+
+        No consulta Binance: solo lee la memoria. Está vacía hasta que alguien pide
+        el precio o se conecta al tiempo real.
+        """
+        precios = precios_recientes.instantanea()
+        return {
+            "simbolo": simbolo,
+            "capacidad": precios_recientes.capacidad(),
+            "cantidad": precios.tamanio(),
+            "precios": [{"momento": m, "precio": p} for m, p in precios],
+        }
 
     @rutas.get("/api/velas")
     def velas(intervalo: str = "", cantidad: str = "") -> dict[str, Any]:

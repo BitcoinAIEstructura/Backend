@@ -8,7 +8,7 @@ import pytest
 
 from bitcoinai.api import ApiError
 from bitcoinai.api.publicador import INICIO, LATIDO, Publicador, PublicadorDeUsuario, Suscriptor
-from bitcoinai.mercado import MercadoError
+from bitcoinai.mercado import MercadoError, PreciosRecientes
 from bitcoinai.simulacion import EstadoOrden, Orden, TipoOrden
 from tests.apoyo.fuente_falsa import FuenteFalsa
 
@@ -90,6 +90,15 @@ def test_precio_solo_con_suscriptores_y_sin_fallar(loop: asyncio.AbstractEventLo
     datos = json.loads(mensaje.removeprefix("event: precio\ndata: "))
     assert (datos["simbolo"], datos["precio"]) == ("BTCUSDT", 123.5)
     assert list(datos) == ["simbolo", "precio", "momento"]
+
+
+def test_el_precio_publicado_se_anota_en_los_recientes(loop: asyncio.AbstractEventLoop) -> None:
+    publicador = Publicador(FuenteFalsa(precio=99.0), "BTCUSDT")
+    recientes = PreciosRecientes()
+    publicador.usar_recientes(recientes)
+    publicador.suscribir(loop)
+    publicador.publicar_precio()
+    assert tuple(p for _, p in recientes.instantanea()) == (99.0,)
 
 
 def test_mensajes_saluda_reenvia_y_termina_al_cerrar(loop: asyncio.AbstractEventLoop) -> None:

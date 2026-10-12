@@ -12,9 +12,11 @@ from bitcoinai.mercado.cliente_binance import (
 )
 from bitcoinai.mercado.errores import MercadoError
 from bitcoinai.mercado.fuente import FuenteDeMercado
+from bitcoinai.mercado.recientes import PreciosRecientes
 from bitcoinai.mercado.validacion import validar_velas, velas_cerradas
 
 __all__ = (
+    "PreciosRecientes",
     "LIMITE_POR_PETICION",
     "MENSAJE_REGION_RESTRINGIDA",
     "URL_BASE_POR_DEFECTO",

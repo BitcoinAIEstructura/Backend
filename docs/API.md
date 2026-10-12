@@ -67,6 +67,17 @@ Indica que el servicio está vivo. Responde siempre rápido y nunca consulta Bin
 
 `momento` es la hora del servidor al responder, en milisegundos desde 1970 (UTC).
 
+### `GET /api/precio/recientes`
+
+Los últimos precios que pasaron por el servidor, del más viejo al más nuevo. No consulta Binance: los guarda una **cola circular** de 120 casillas que alimentan `GET /api/precio` y el tiempo real (cada 5 s). Al llenarse, cada precio nuevo pisa al más viejo, así que son más o menos los últimos 10 minutos. Si llegan dos con menos de 2 s entre sí, se guarda solo el primero.
+
+```json
+{"simbolo":"BTCUSDT","capacidad":120,"cantidad":2,
+ "precios":[{"momento":1791417600000,"precio":83097.08},{"momento":1791417605000,"precio":83101.5}]}
+```
+
+Está vacía hasta que alguien pide el precio o se conecta a `/api/stream`.
+
 ### `GET /api/velas`
 
 Velas del símbolo configurado, de la más antigua a la más reciente.
