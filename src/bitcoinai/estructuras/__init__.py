@@ -14,6 +14,7 @@ from bitcoinai.estructuras.lista_doble import ListaDoble
 from bitcoinai.estructuras.monticulo import Monticulo
 from bitcoinai.estructuras.nodos import NodoDoble, NodoSimple
 from bitcoinai.estructuras.pila import Pila
+from bitcoinai.estructuras.tabla_hash import TablaHash
 
 __all__ = (
     "ArbolAVL",
@@ -28,4 +29,5 @@ __all__ = (
     "NodoDoble",
     "NodoSimple",
     "Pila",
+    "TablaHash",
 )
