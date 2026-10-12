@@ -5,6 +5,7 @@ Se implementan a mano, sin ``list``, ``collections.deque`` ni ``queue.Queue``.
 Cada operación documenta su complejidad.
 """
 
+from bitcoinai.estructuras.arbol_avl import ArbolAVL, NodoAVL
 from bitcoinai.estructuras.arreglo import Arreglo
 from bitcoinai.estructuras.cola import Cola
 from bitcoinai.estructuras.excepciones import EstructuraVaciaError, IndiceFueraDeRangoError
@@ -15,6 +16,7 @@ from bitcoinai.estructuras.nodos import NodoDoble, NodoSimple
 from bitcoinai.estructuras.pila import Pila
 
 __all__ = (
+    "ArbolAVL",
     "Arreglo",
     "Cola",
     "EstructuraVaciaError",
@@ -22,6 +24,7 @@ __all__ = (
     "Lista",
     "ListaDoble",
     "Monticulo",
+    "NodoAVL",
     "NodoDoble",
     "NodoSimple",
     "Pila",
