@@ -407,6 +407,24 @@ Tipos de evento:
 | Órdenes | `ORDEN_CREADA`, `ORDEN_EJECUTADA`, `ORDEN_CANCELADA`, `ORDEN_DESHECHA`, `ORDEN_RECHAZADA` |
 | Bot | `DECISION_BOT`, `STOP_LOSS`, `TAKE_PROFIT`, `BOT_INICIADO`, `BOT_DETENIDO`, `ERROR_BOT` |
 
+### Liga de inversores: `GET /api/liga`
+
+Los 10 usuarios con mejor rentabilidad y tu puesto. Exige sesión.
+
+- **Quién entra:** quien ya ejecutó al menos una orden. Cada cartera se valora al precio actual.
+- **Privacidad:** nadie aparece con su nombre. Cada usuario tiene un **alias** fijo, por ejemplo `Halcón Dorado 07`, y `esTuyo` marca el tuyo.
+- **Cómo se calcula:** un **montículo** de tamaño 10 guarda los 10 mejores vistos hasta el momento, y su tope es el peor de ellos. Cada usuario nuevo entra solo si supera ese tope. Cuesta O(n log 10), sin ordenar a todos.
+- **Empates:** gana quien se registró antes.
+
+```json
+{"precio": 120.0, "participantes": 2,
+ "mejores": [{"posicion": 1, "alias": "Halcón Dorado 07", "rentabilidad": 0.0994, "valorTotal": 10994.0, "esTuyo": true},
+             {"posicion": 2, "alias": "Lince Jade 41", "rentabilidad": 0.0198, "valorTotal": 10198.0, "esTuyo": false}],
+ "tu": {"posicion": 1, "alias": "Halcón Dorado 07", "rentabilidad": 0.0994, "valorTotal": 10994.0, "esTuyo": true}}
+```
+
+`tu` es `null` si todavía no has ejecutado ninguna orden.
+
 ### Bot simulado
 
 | Método y ruta | Qué hace |

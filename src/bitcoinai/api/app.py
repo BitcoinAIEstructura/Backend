@@ -1,6 +1,6 @@
 """Construcción de la aplicación FastAPI."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -12,16 +12,20 @@ from bitcoinai.api.publicador import Publicador
 from bitcoinai.api.respuestas import RespuestaJson
 from bitcoinai.api.rutas_cuentas import crear_rutas_cuentas
 from bitcoinai.api.rutas_estrategia import crear_rutas_estrategia
+from bitcoinai.api.rutas_liga import crear_rutas_liga
 from bitcoinai.api.rutas_mercado import crear_rutas_mercado
 from bitcoinai.api.rutas_simulacion import crear_rutas_simulacion
 from bitcoinai.api.rutas_stream import crear_rutas_stream
+from bitcoinai.estructuras import Lista
 from bitcoinai.mercado import FuenteDeMercado, PreciosRecientes
 from bitcoinai.simulacion import GestorSimulaciones
+from bitcoinai.simulacion.ranking import Participante
 from bitcoinai.usuarios.servicio import ServicioCuentas
 
 
 def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Publicador | None = None,
-              cuentas: ServicioCuentas | None = None, gestor: GestorSimulaciones | None = None) -> FastAPI:
+              cuentas: ServicioCuentas | None = None, gestor: GestorSimulaciones | None = None,
+              participantes: Callable[[float], Lista[Participante]] | None = None) -> FastAPI:
     """Crea la API con sus dependencias (en las pruebas, una ``FuenteFalsa``).
 
     - Todas las respuestas son ``application/json; charset=utf-8``, incluidos los errores.
@@ -31,6 +35,7 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
     - ``GET /api/stream`` se registra si se pasa un ``publicador``; se inicia al
       arrancar y al apagar cierra las conexiones abiertas.
     - Los endpoints de cuentas y sesión se registran si se pasa ``cuentas``.
+    - ``GET /api/liga`` se registra si se pasan ``cuentas`` y ``participantes`` (quién lee las carteras).
     - La documentación interactiva queda en ``/docs``.
     """
 
@@ -66,6 +71,8 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
         app.include_router(crear_rutas_stream(publicador, cuentas, config))
     if cuentas is not None:
         app.include_router(crear_rutas_cuentas(cuentas, config))
+    if cuentas is not None and participantes is not None:
+        app.include_router(crear_rutas_liga(participantes, fuente, config.simbolo, cuentas, config))
     app.state.publicador, app.state.cuentas, app.state.gestor = publicador, cuentas, gestor
 
     # El último que se agrega queda más afuera.

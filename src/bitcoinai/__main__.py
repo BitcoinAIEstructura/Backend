@@ -15,7 +15,7 @@ from bitcoinai.api.publicador import Publicador, PublicadorDeUsuario
 from bitcoinai.basedatos import BaseDatos
 from bitcoinai.basedatos.migraciones import migrar
 from bitcoinai.mercado import CacheMercado, ClienteBinance
-from bitcoinai.persistencia import AlmacenBaseDatos
+from bitcoinai.persistencia import AlmacenBaseDatos, participantes_activos
 from bitcoinai.seguridad.cifrado import Cifrador
 from bitcoinai.seguridad.claves import cargar_clave
 from bitcoinai.seguridad.contrasenas import HashContrasenas
@@ -56,7 +56,7 @@ def construir(config: Configuracion, hasher: HashContrasenas | None = None) -> F
                                 crear_publicador=lambda usuario: PublicadorDeUsuario(publicador, usuario),
                                 maximo_bots=config.max_bots)
     return crear_app(config, fuente, publicador=publicador, cuentas=construir_cuentas(config, bd, hasher),
-                     gestor=gestor)
+                     gestor=gestor, participantes=lambda precio: participantes_activos(bd, precio))
 
 
 def main() -> None:
