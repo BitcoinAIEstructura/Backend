@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from bitcoinai.estrategia import Estrategia, EstrategiaCombinada
+from bitcoinai.estructuras import TablaHash
 from bitcoinai.mercado import FuenteDeMercado
 from bitcoinai.simulacion.bot import BotSimulado, ConfiguracionBot, EstadoBot
 from bitcoinai.simulacion.cartera import SALDO_INICIAL_POR_DEFECTO, Cartera
@@ -30,7 +31,11 @@ class SimulacionUsuario:
 
 
 class GestorSimulaciones:
-    """Las simulaciones de todos los usuarios, en un mapa ``usuario_id → simulación``."""
+    """Las simulaciones de todos los usuarios, en una tabla hash propia ``usuario_id → simulación``.
+
+    Encontrar la simulación de quien hace la petición cuesta O(1) en promedio, sin
+    importar cuántos usuarios haya cargados.
+    """
 
     def __init__(self, fuente: FuenteDeMercado, simbolo: str,
                  crear_almacen: Callable[[int], AlmacenSimulacion] | None = None,
@@ -45,13 +50,13 @@ class GestorSimulaciones:
         self._crear_estrategia = crear_estrategia
         self._saldo_inicial = saldo_inicial
         self.maximo_bots = maximo_bots
-        self._simulaciones: dict[int, SimulacionUsuario] = {}
+        self._simulaciones: TablaHash[int, SimulacionUsuario] = TablaHash()
         self._candado = threading.Lock()
 
     def _simulacion(self, usuario_id: int) -> SimulacionUsuario:
         """La simulación del usuario; la crea y la carga si es la primera vez. O(1) las siguientes."""
         with self._candado:
-            existente = self._simulaciones.get(usuario_id)
+            existente = self._simulaciones.obtener(usuario_id)
             if existente is not None:
                 return existente
             libro = LibroDeOrdenes(Cartera(self._saldo_inicial), self._fuente, self._simbolo)
@@ -63,7 +68,7 @@ class GestorSimulaciones:
             bot = BotSimulado(libro, self._fuente, self._crear_estrategia(), self._simbolo)
             bot.usar_publicador(publicador)
             nueva = SimulacionUsuario(libro, bot)
-            self._simulaciones[usuario_id] = nueva
+            self._simulaciones.poner(usuario_id, nueva)
             return nueva
 
     def libro(self, usuario_id: int) -> LibroDeOrdenes:
@@ -74,14 +79,14 @@ class GestorSimulaciones:
 
     def cantidad_cargadas(self) -> int:
         with self._candado:
-            return len(self._simulaciones)
+            return self._simulaciones.tamanio()
 
     # ---------- bots ----------
 
     def bots_activos(self) -> int:
         """Cuántos bots están en marcha ahora. Complejidad: O(u) con u usuarios cargados."""
         with self._candado:
-            return sum(1 for s in self._simulaciones.values() if s.bot.estado().activo)
+            return sum(1 for s in self._simulaciones.valores() if s.bot.estado().activo)
 
     def iniciar_bot(self, usuario_id: int, configuracion: ConfiguracionBot) -> EstadoBot:
         """Enciende el bot del usuario si no se llegó al máximo de bots a la vez.
@@ -91,7 +96,7 @@ class GestorSimulaciones:
         """
         bot = self.bot(usuario_id)
         with self._candado:
-            activos = sum(1 for s in self._simulaciones.values() if s.bot.estado().activo)
+            activos = sum(1 for s in self._simulaciones.valores() if s.bot.estado().activo)
             if not bot.estado().activo and activos >= self.maximo_bots:
                 raise OperacionInvalidaError(
                     f"Hay demasiados bots en marcha (máximo {self.maximo_bots}); intenta más tarde")
@@ -100,6 +105,6 @@ class GestorSimulaciones:
     def detener_todos(self) -> None:
         """Apaga todos los bots (al cerrar el servidor)."""
         with self._candado:
-            simulaciones = tuple(self._simulaciones.values())
+            simulaciones = tuple(self._simulaciones.valores())
         for simulacion in simulaciones:
             simulacion.bot.detener()
