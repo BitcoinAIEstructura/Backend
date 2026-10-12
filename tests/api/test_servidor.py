@@ -71,6 +71,31 @@ def test_precios_recientes_se_llenan_con_cada_precio_pedido(cliente: TestClient)
     assert lleno["precios"] == [{"momento": momento, "precio": lleno["precios"][0]["precio"]}]
 
 
+def test_si_hubiera_invertido(cliente: TestClient, fuente: FuenteFalsa) -> None:
+    # Las velas falsas abren a las 22:13 UTC: la primera desde el 15 de nov. de 2023 es la segunda (abre en 101).
+    fuente.precio = 202.0
+    r = cliente.get("/api/si-hubiera", params={"fecha": "2023-11-15", "monto": "1000"})
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert cuerpo["vela"]["apertura"] == 101.0
+    assert cuerpo["btc"] == pytest.approx(999 / 101)
+    assert cuerpo["valorHoy"] == pytest.approx(999 / 101 * 202)
+    assert cuerpo["mejor"]["precio"] == 100 + 499 + 5  # el máximo de la última vela
+    assert cuerpo["velasRecorridas"] == 499
+    assert (cuerpo["velasIndexadas"], cuerpo["alturaArbol"]) == (500, 9)
+
+
+@pytest.mark.parametrize(("fecha", "monto", "fragmento"), [
+    ("15/11/2023", "100", "AAAA-MM-DD"),
+    ("2999-01-01", "100", "futuro"),
+    ("2020-01-01", "100", "Hay datos desde el 2023-11-14"),
+    ("2024-01-01", "0", "monto"),
+    ("2024-01-01", "mucho", "monto"),
+])
+def test_si_hubiera_con_datos_invalidos(cliente: TestClient, fecha: str, monto: str, fragmento: str) -> None:
+    assert_error(cliente.get("/api/si-hubiera", params={"fecha": fecha, "monto": monto}), 400, fragmento)
+
+
 def test_velas_con_parametros(cliente: TestClient) -> None:
     r = cliente.get("/api/velas?intervalo=1d&cantidad=5")
     assert r.status_code == 200

@@ -180,6 +180,30 @@ Errores de ejemplo (400; se valida todo antes de consultar Binance):
 {"error":"Parámetro 'lento' (12) debe ser mayor que 'rapido' (26)"}
 ```
 
+### `GET /api/si-hubiera`
+
+**¿Y si hubiera invertido?** Calcula cuánto valdría hoy una compra hecha al abrir un día del pasado. Es un cálculo hipotético con datos reales, no una predicción.
+
+| Parámetro | Valores | Ejemplo |
+| --- | --- | --- |
+| `fecha` | `AAAA-MM-DD`, en UTC y no en el futuro | `2024-01-15` |
+| `monto` | USDT, mayor que 0 y hasta 1 000 000 | `1000` |
+
+**Cómo funciona:**
+- Las últimas 1000 velas diarias se indexan en un **árbol AVL** por su hora de apertura.
+- `techo(fecha)` encuentra la primera vela desde esa fecha en O(log n).
+- `rango(fecha, hoy)` recorre solo las velas posteriores para hallar el mejor (máximo) y el peor (mínimo) momento.
+- La compra descuenta la comisión de 0,1 %.
+
+```json
+{"fecha":"2024-01-15","monto":1000,"vela":{"tiempoApertura":1705276800000,"apertura":42499.99,…},
+ "btc":0.0235059,"precioActual":82937.59,"valorHoy":1949.52,"ganancia":949.52,"rentabilidad":0.9495,
+ "mejor":{"tiempo":1734307200000,"precio":108353.0},"peor":{"tiempo":1705795200000,"precio":38555.0},
+ "velasRecorridas":636,"alturaArbol":11,"velasIndexadas":1000}
+```
+
+Si la fecha es anterior a los datos, responde `400` con el día desde el que hay datos: `"Esa fecha es anterior a los datos disponibles. Hay datos desde el 2024-01-17."`.
+
 ## Estrategias, señales y backtest
 
 > **Aviso:** Resultado de pruebas con datos históricos; no es asesoría financiera ni garantiza ganancias. Ese texto viaja en el campo `aviso` de cada pronóstico y de cada backtest.
