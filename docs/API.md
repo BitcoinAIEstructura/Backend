@@ -515,6 +515,65 @@ curl localhost:8080/api/cartera
 curl -X POST localhost:8080/api/bot/iniciar -H "Content-Type: application/json" -d '{"segundosEntreCiclos":60}'
 ```
 
+## Estructuras de datos a la vista
+
+Son para la pantalla "Cómo funciona" del frontend.
+
+### `GET /api/estructuras`
+
+Muestra cómo están ahora las estructuras reales. Exige sesión. Leerlas no las cambia: la cola se lee rotándola y las pilas con una pila auxiliar.
+
+- **De tu simulación:**
+  - `cola`: las órdenes pendientes.
+  - `pila`: el historial, con el más reciente primero.
+  - `pilaDeshacer`: los ids que deshacería "Deshacer", del próximo al más viejo.
+  - `lista`: cuántas órdenes hay en el registro.
+- **Del servidor:**
+  - `tablaHash`: la tabla de simulaciones de usuarios. Muestra solo cantidades, nunca ids.
+  - `colaCircular`: el anillo de precios recientes, con el contenido de cada casilla tal como está en memoria.
+  - `trie`: el trie de la búsqueda.
+- Se muestran como máximo 10 elementos de cada estructura.
+
+```json
+{"cola":{"tamanio":2,"ordenes":[{"id":2,"tipo":"COMPRA","monto":20,"todo":false},…]},
+ "pila":{"tamanio":4,"eventos":[{"tipo":"ORDEN_EJECUTADA","idOrden":1,"momento":1791433083120},…]},
+ "pilaDeshacer":{"tamanio":3,"ids":[3,2,1]},
+ "lista":{"tamanio":1},
+ "tablaHash":{"capacidad":8,"tamanio":1,"factorCarga":0.125,"longitudes":[0,1,0,0,0,0,0,0]},
+ "colaCircular":{"capacidad":120,"frente":0,"tamanio":1,"casillas":[83097.08,null,…]},
+ "trie":{"palabras":222,"nodos":886}}
+```
+
+### `POST /api/estructuras/demo`
+
+Corre operaciones sobre una estructura nueva, con el código real del backend, y devuelve cómo queda después de cada una. Es pública y no guarda nada.
+
+```json
+{"estructura":"avl","operaciones":[{"operacion":"insertar","valor":30},{"operacion":"insertar","valor":20},{"operacion":"insertar","valor":10}]}
+```
+
+| Estructura | Operaciones | Valores |
+| --- | --- | --- |
+| `cola` | `encolar`, `desencolar` | Enteros entre −9999 y 99999 |
+| `pila` | `apilar`, `desapilar` | Enteros |
+| `monticulo` | `insertar`, `extraer` (sale el menor) | Enteros |
+| `avl` | `insertar`, `eliminar`, `buscar` | Enteros |
+| `tabla-hash` | `poner`, `eliminar`, `buscar` (empieza con 4 cubetas) | Enteros |
+| `cola-circular` | `agregar` (si está llena, pisa al más viejo), `desencolar` (8 casillas) | Enteros |
+| `trie` | `insertar`, `eliminar`, `buscar` | Palabras de 1 a 12 letras, que se pasan a minúsculas y sin tildes |
+
+- Se aceptan como máximo 30 operaciones.
+- `desencolar`, `desapilar` y `extraer` no llevan `valor`.
+- Cada paso devuelve `{operacion, valor, resultado, descripcion, complejidad, estado}`.
+- `descripcion` explica lo que pasó, por ejemplo "Rotación simple a la derecha en 30." o "creció a 8 cubetas y reubicó todo (rehash)".
+- `estado` es la foto para dibujar:
+  - árbol AVL: nodos anidados con `clave`, `altura`, `izquierdo` y `derecho`;
+  - montículo: el arreglo, nivel por nivel;
+  - tabla hash: las claves de cada cubeta;
+  - cola circular: las casillas en memoria y el frente;
+  - trie: nodos anidados con `letra`, `fin` e `hijos`.
+- Responde `400` si la estructura, la operación o un valor no son válidos.
+
 ## Tiempo real: `GET /api/stream`
 
 Conexión que queda abierta y por la que el servidor envía eventos con **Server-Sent Events** (SSE): `Content-Type: text/event-stream`.
