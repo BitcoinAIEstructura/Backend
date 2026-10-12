@@ -10,6 +10,7 @@ from bitcoinai.estructuras.cola import Cola
 from bitcoinai.estructuras.excepciones import EstructuraVaciaError, IndiceFueraDeRangoError
 from bitcoinai.estructuras.lista import Lista
 from bitcoinai.estructuras.lista_doble import ListaDoble
+from bitcoinai.estructuras.monticulo import Monticulo
 from bitcoinai.estructuras.nodos import NodoDoble, NodoSimple
 from bitcoinai.estructuras.pila import Pila
 
@@ -20,6 +21,7 @@ __all__ = (
     "IndiceFueraDeRangoError",
     "Lista",
     "ListaDoble",
+    "Monticulo",
     "NodoDoble",
     "NodoSimple",
     "Pila",
