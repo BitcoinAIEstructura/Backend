@@ -88,3 +88,11 @@ def test_limite_de_bots_a_la_vez(fuente: FuenteFalsa) -> None:
     finally:
         gestor.detener_todos()
     assert gestor.bots_activos() == 0
+
+
+def test_reparto_de_la_tabla_solo_da_cantidades(gestor: GestorSimulaciones) -> None:
+    for usuario in range(1, 11):
+        gestor.libro(usuario)
+    capacidad, cargadas, longitudes = gestor.reparto_de_la_tabla()
+    assert (capacidad, cargadas) == (16, 10)
+    assert sum(longitudes) == 10 and longitudes.tamanio() == 16

@@ -401,6 +401,28 @@ class LibroDeOrdenes:
                 self._eventos.apilar(auxiliar.desapilar())
             return resultado
 
+    def pila_deshacer(self, limite: int) -> Lista[int]:
+        """Los ids que "Deshacer" intentaría, del próximo al más viejo, sin quitarlos.
+
+        Igual que ``historial``: se desapilan k a una auxiliar y se devuelven. Complejidad: O(k).
+        """
+        with self._candado:
+            resultado: Lista[int] = Lista()
+            auxiliar: Pila[int] = Pila()
+            while not self._creadas.esta_vacia() and resultado.tamanio() < limite:
+                id_orden = self._creadas.desapilar()
+                resultado.agregar(id_orden)
+                auxiliar.apilar(id_orden)
+            while not auxiliar.esta_vacia():
+                self._creadas.apilar(auxiliar.desapilar())
+            return resultado
+
+    def tamanios(self) -> tuple[int, int, int, int]:
+        """Tamaño de la cola de pendientes, del registro, del historial y de la pila de deshacer. O(1)."""
+        with self._candado:
+            return (self._pendientes.tamanio(), self._registro.tamanio(), self._eventos.tamanio(),
+                    self._creadas.tamanio())
+
     def estado_cartera(self, precio: float | None = None) -> EstadoCartera:
         """Cartera valorada al precio dado, o al precio actual (consultado fuera del candado)."""
         valor = self._fuente.obtener_precio_actual(self._simbolo) if precio is None else precio

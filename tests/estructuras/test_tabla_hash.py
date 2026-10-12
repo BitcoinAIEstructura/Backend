@@ -92,3 +92,12 @@ def test_coincide_con_un_diccionario_en_operaciones_al_azar() -> None:
             assert tabla.eliminar(clave) == (referencia.pop(clave, None) is not None)
     assert sorted(tabla.elementos()) == sorted(referencia.items())
     assert tabla.tamanio() == len(referencia)
+
+
+def test_claves_por_cubeta_sigue_la_cadena() -> None:
+    tabla: TablaHash[ClaveQueChoca, int] = TablaHash(2)
+    tabla.poner(ClaveQueChoca("a"), 1)
+    tabla.poner(ClaveQueChoca("b"), 2)  # entra al frente de la cadena
+    cubetas = tuple(tuple(c.nombre for c in cubeta) for cubeta in tabla.claves_por_cubeta())
+    # Con 2 claves en 2 cubetas el factor sería 1 > 0,75: creció a 4. Las dos chocan: cadena b → a.
+    assert sorted(cubetas) == [(), (), (), ("b", "a")]

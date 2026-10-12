@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from bitcoinai.estrategia import Estrategia, EstrategiaCombinada
-from bitcoinai.estructuras import TablaHash
+from bitcoinai.estructuras import Lista, TablaHash
 from bitcoinai.mercado import FuenteDeMercado
 from bitcoinai.simulacion.bot import BotSimulado, ConfiguracionBot, EstadoBot
 from bitcoinai.simulacion.cartera import SALDO_INICIAL_POR_DEFECTO, Cartera
@@ -80,6 +80,12 @@ class GestorSimulaciones:
     def cantidad_cargadas(self) -> int:
         with self._candado:
             return self._simulaciones.tamanio()
+
+    def reparto_de_la_tabla(self) -> tuple[int, int, Lista[int]]:
+        """Cubetas, simulaciones cargadas y cuántas hay en cada cubeta (sin ids: solo cantidades)."""
+        with self._candado:
+            return (self._simulaciones.capacidad(), self._simulaciones.tamanio(),
+                    self._simulaciones.longitudes_de_cubetas())
 
     # ---------- bots ----------
 

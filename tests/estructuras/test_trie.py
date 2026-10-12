@@ -85,3 +85,12 @@ def test_coincide_con_filtrar_un_conjunto_al_azar() -> None:
     for prefijo in ("", "a", "ab", "cab", "bbb"):
         esperado = tuple(sorted(p for p in referencia if p.startswith(prefijo)))
         assert palabras(trie, prefijo, limite=10_000) == esperado
+
+
+def test_recorrer_los_nodos_para_dibujar() -> None:
+    trie = trie_de("sol", "sal")
+    (s,) = tuple(trie.raiz().hijos())
+    assert s.letra == "s"
+    assert tuple(h.letra for h in s.hijos()) == ("a", "o")
+    (ele,) = tuple(tuple(s.hijos())[0].hijos())
+    assert ele.tiene_valor and tuple(ele.hijos()) == ()

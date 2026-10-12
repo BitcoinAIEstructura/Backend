@@ -277,3 +277,13 @@ def test_datos_invalidos_al_crear(libro: LibroDeOrdenes) -> None:
     with pytest.raises(OrdenNoEncontradaError):
         libro.obtener(5)
     assert libro.cantidad_pendientes() == 0
+
+
+def test_pila_deshacer_y_tamanios_sin_cambiar_nada(libro: LibroDeOrdenes) -> None:
+    for monto in (10, 20, 30):
+        libro.crear_compra(monto)
+    libro.procesar_siguiente()
+    assert tuple(libro.pila_deshacer(2)) == (3, 2)
+    assert tuple(libro.pila_deshacer(10)) == (3, 2, 1)
+    assert libro.tamanios() == (2, 1, 4, 3)  # 2 en cola, 1 en registro, 4 eventos, 3 ids creados
+    assert libro.deshacer_ultima_orden() is not None  # la pila quedó intacta

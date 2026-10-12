@@ -16,7 +16,7 @@ from bitcoinai.estructuras.monticulo import Monticulo
 from bitcoinai.estructuras.nodos import NodoDoble, NodoSimple
 from bitcoinai.estructuras.pila import Pila
 from bitcoinai.estructuras.tabla_hash import TablaHash
-from bitcoinai.estructuras.trie import Trie
+from bitcoinai.estructuras.trie import NodoTrie, Trie
 
 __all__ = (
     "ArbolAVL",
@@ -32,6 +32,7 @@ __all__ = (
     "NodoAVL",
     "NodoDoble",
     "NodoSimple",
+    "NodoTrie",
     "Pila",
     "TablaHash",
     "Trie",

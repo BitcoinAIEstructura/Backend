@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from bitcoinai.estructuras.excepciones import EstructuraVaciaError
 from bitcoinai.estructuras.lista import Lista
 from bitcoinai.estructuras.pila import Pila
 
 
-class _NodoTrie[V]:
+class NodoTrie[V]:
     """Una letra del trie.
 
     Los hijos van en una lista enlazada de hermanos ordenada por letra
@@ -19,10 +21,17 @@ class _NodoTrie[V]:
 
     def __init__(self, letra: str) -> None:
         self.letra = letra
-        self.hijo: _NodoTrie[V] | None = None
-        self.hermano: _NodoTrie[V] | None = None
+        self.hijo: NodoTrie[V] | None = None
+        self.hermano: NodoTrie[V] | None = None
         self.tiene_valor = False
         self.valor: V | None = None
+
+    def hijos(self) -> Iterator[NodoTrie[V]]:
+        """Los hijos en orden alfabético (para dibujar el trie). Complejidad: O(a)."""
+        hijo = self.hijo
+        while hijo is not None:
+            yield hijo
+            hijo = hijo.hermano
 
 
 class Trie[V]:
@@ -41,26 +50,26 @@ class Trie[V]:
 
     def __init__(self) -> None:
         """Crea un trie vacío. Complejidad: O(1)."""
-        self._raiz: _NodoTrie[V] = _NodoTrie("")
+        self._raiz: NodoTrie[V] = NodoTrie("")
         self._tamanio = 0
         self._nodos = 1
 
-    def _hijo(self, nodo: _NodoTrie[V], letra: str) -> _NodoTrie[V] | None:
+    def _hijo(self, nodo: NodoTrie[V], letra: str) -> NodoTrie[V] | None:
         """El hijo con esa letra, o ``None``. Los hermanos están ordenados: para antes. O(a)."""
         hijo = nodo.hijo
         while hijo is not None and hijo.letra < letra:
             hijo = hijo.hermano
         return hijo if hijo is not None and hijo.letra == letra else None
 
-    def _hijo_o_nuevo(self, nodo: _NodoTrie[V], letra: str) -> _NodoTrie[V]:
+    def _hijo_o_nuevo(self, nodo: NodoTrie[V], letra: str) -> NodoTrie[V]:
         """El hijo con esa letra; si no existe, lo crea en su lugar alfabético. O(a)."""
-        anterior: _NodoTrie[V] | None = None
+        anterior: NodoTrie[V] | None = None
         hijo = nodo.hijo
         while hijo is not None and hijo.letra < letra:
             anterior, hijo = hijo, hijo.hermano
         if hijo is not None and hijo.letra == letra:
             return hijo
-        nuevo: _NodoTrie[V] = _NodoTrie(letra)
+        nuevo: NodoTrie[V] = NodoTrie(letra)
         nuevo.hermano = hijo
         if anterior is None:
             nodo.hijo = nuevo
@@ -69,8 +78,8 @@ class Trie[V]:
         self._nodos += 1
         return nuevo
 
-    def _nodo_de(self, texto: str) -> _NodoTrie[V] | None:
-        nodo: _NodoTrie[V] | None = self._raiz
+    def _nodo_de(self, texto: str) -> NodoTrie[V] | None:
+        nodo: NodoTrie[V] | None = self._raiz
         for letra in texto:
             assert nodo is not None
             nodo = self._hijo(nodo, letra)
@@ -123,14 +132,14 @@ class Trie[V]:
         inicio = self._nodo_de(prefijo)
         if inicio is None or limite <= 0:
             return resultado
-        pendientes: Pila[tuple[_NodoTrie[V], str]] = Pila()
+        pendientes: Pila[tuple[NodoTrie[V], str]] = Pila()
         pendientes.apilar((inicio, prefijo))
         while not pendientes.esta_vacia() and resultado.tamanio() < limite:
             nodo, texto = pendientes.desapilar()
             if nodo.tiene_valor:
                 resultado.agregar((texto, nodo.valor))  # type: ignore[arg-type]
             # Los hijos se apilan al revés para que salga primero la letra menor.
-            hijos: Pila[_NodoTrie[V]] = Pila()
+            hijos: Pila[NodoTrie[V]] = Pila()
             hijo = nodo.hijo
             while hijo is not None:
                 hijos.apilar(hijo)
@@ -146,8 +155,8 @@ class Trie[V]:
         Returns:
             True si estaba.
         """
-        camino: Pila[_NodoTrie[V]] = Pila()
-        nodo: _NodoTrie[V] | None = self._raiz
+        camino: Pila[NodoTrie[V]] = Pila()
+        nodo: NodoTrie[V] | None = self._raiz
         for letra in palabra:
             assert nodo is not None
             camino.apilar(nodo)
@@ -165,7 +174,7 @@ class Trie[V]:
             nodo = padre
         return True
 
-    def _quitar_hijo(self, padre: _NodoTrie[V], hijo: _NodoTrie[V]) -> None:
+    def _quitar_hijo(self, padre: NodoTrie[V], hijo: NodoTrie[V]) -> None:
         if padre.hijo is hijo:
             padre.hijo = hijo.hermano
         else:
@@ -186,6 +195,10 @@ class Trie[V]:
         if primera.esta_vacia():
             raise EstructuraVaciaError("El trie está vacío")
         return primera.obtener(0)[0]
+
+    def raiz(self) -> NodoTrie[V]:
+        """La raíz (letra vacía), para recorrer y dibujar el trie sin cambiarlo. Complejidad: O(1)."""
+        return self._raiz
 
     def cantidad_nodos(self) -> int:
         """Nodos (letras) que usa, contando la raíz: muestra cuánto comparten los prefijos. Complejidad: O(1)."""

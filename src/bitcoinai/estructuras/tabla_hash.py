@@ -151,6 +151,19 @@ class TablaHash[K: Hashable, V]:
             longitudes.agregar(cantidad)
         return longitudes
 
+    def claves_por_cubeta(self) -> Iterator[Lista[K]]:
+        """Las claves de cada cubeta (en el orden de su cadena), de la 0 a la última.
+
+        Sirve para dibujar la tabla. Complejidad: O(n + capacidad).
+        """
+        for cabeza in self._cubetas:
+            claves: Lista[K] = Lista()
+            entrada = cabeza
+            while entrada is not None:
+                claves.agregar(entrada.clave)
+                entrada = entrada.siguiente
+            yield claves
+
     def capacidad(self) -> int:
         """Cantidad de cubetas. Complejidad: O(1)."""
         return self._cubetas.capacidad()
