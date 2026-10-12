@@ -8,6 +8,7 @@ Cada operación documenta su complejidad.
 from bitcoinai.estructuras.arbol_avl import ArbolAVL, NodoAVL
 from bitcoinai.estructuras.arreglo import Arreglo
 from bitcoinai.estructuras.cola import Cola
+from bitcoinai.estructuras.cola_circular import ColaCircular, ColaLlenaError
 from bitcoinai.estructuras.excepciones import EstructuraVaciaError, IndiceFueraDeRangoError
 from bitcoinai.estructuras.lista import Lista
 from bitcoinai.estructuras.lista_doble import ListaDoble
@@ -20,6 +21,8 @@ __all__ = (
     "ArbolAVL",
     "Arreglo",
     "Cola",
+    "ColaCircular",
+    "ColaLlenaError",
     "EstructuraVaciaError",
     "IndiceFueraDeRangoError",
     "Lista",
