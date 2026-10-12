@@ -56,8 +56,8 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se�
 ## Etapa 2: plataforma (el frontend nuevo está en otro repositorio)
 - [x] 1. Usuarios y seguridad: registro con CC/CE, Argon2id, datos cifrados, sesiones con cookie, 2FA (TOTP), límites de intentos, actividad
 - [x] 2. Cada usuario con su propia simulación (cartera, órdenes y bot), guardada en la base de datos
-- [ ] 3. Frontend nuevo: inicio de sesión con moneda 3D y diseño futurista adaptable
-- [ ] 4. Panel con gráficas en vivo
+- [x] 3. Frontend nuevo: inicio de sesión con moneda 3D y diseño futurista adaptable
+- [x] 4. Panel con gráficas en vivo
 - [ ] 5. Estructuras avanzadas (montículo, árbol AVL, tabla hash, cola circular, trie) y pantalla "Cómo funciona"
 - [ ] 6. IA: regresión logística, árbol de decisión, k vecinos y comité
 - [ ] 7. Seguridad extra y pulido
