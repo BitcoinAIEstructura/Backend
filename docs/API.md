@@ -759,6 +759,15 @@ Devuelve `{"usuario": {...}}`, o `401` si no hay sesión. Sirve al frontend para
 
 Los códigos de 6 dígitos equivocados con la sesión abierta también se limitan: 5 cada 15 minutos.
 
+## Límite de peticiones
+
+Cada IP tiene un límite por minuto, en una ventana deslizante:
+
+- **Rutas costosas** (`/api/ia/…`, `/api/estructuras/demo`, `/api/si-hubiera` y `/api/backtest`): 30 por minuto (`LIMITE_COSTOSAS`).
+- **El resto de `/api`:** 600 por minuto (`LIMITE_GENERAL`). `/health` no cuenta.
+
+Al pasarse, responde `429` con `Retry-After` y `{"error":"Demasiadas peticiones. Espera 12 s e intenta de nuevo."}`. La IP sale de `X-Forwarded-For` solo con `CONFIAR_PROXY=true`.
+
 ## Variables de entorno
 
 Ninguna es obligatoria. La única secreta es `CLAVE_CIFRADO`.
@@ -777,5 +786,7 @@ Ninguna es obligatoria. La única secreta es `CLAVE_CIFRADO`.
 | `CLAVE_CIFRADO` | (se genera una local) | **Secreta.** 32 bytes en base64 para cifrar los datos personales. Si falta, se crea `<DATA_DIR>/clave-cifrado.key`. En producción defínela como secreto; si se pierde, los datos cifrados no se pueden recuperar. |
 | `COOKIE_SEGURA` | `false` | `true` cuando el backend se sirve por HTTPS (Railway): cookie `Secure` con prefijo `__Host-` y HSTS. |
 | `CONFIAR_PROXY` | `false` | `true` solo detrás de un proxy propio (Railway): la IP real se toma de `X-Forwarded-For`, para los límites de intentos y la actividad. |
+| `LIMITE_GENERAL` | `600` | Peticiones a `/api` por minuto y por IP. |
+| `LIMITE_COSTOSAS` | `30` | Peticiones por minuto y por IP a las rutas costosas (IA, demo, si-hubiera, backtest). |
 
 Si una variable tiene un valor inválido (por ejemplo `PORT=abc`), el servidor no arranca y muestra un mensaje que explica el problema.

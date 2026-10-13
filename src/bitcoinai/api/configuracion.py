@@ -34,6 +34,9 @@ class Configuracion:
             ``true`` cuando haya HTTPS, como en Railway).
         confiar_proxy: si se cree el encabezado ``X-Forwarded-For`` para saber la IP real
             (``CONFIAR_PROXY``; solo detrás de un proxy propio, como Railway o el frontend).
+        limite_general: peticiones a ``/api`` por minuto y por IP (``LIMITE_GENERAL``, 600).
+        limite_costosas: peticiones por minuto y por IP a las rutas costosas, como la IA
+            (``LIMITE_COSTOSAS``, 30).
     """
 
     puerto: int = 8080
@@ -47,6 +50,8 @@ class Configuracion:
     base_datos: str = ""
     cookie_segura: bool = False
     confiar_proxy: bool = False
+    limite_general: int = 600
+    limite_costosas: int = 30
 
     @property
     def ruta_base_datos(self) -> str:
@@ -75,6 +80,8 @@ class Configuracion:
             base_datos=_texto(variables, "BASE_DATOS", ""),
             cookie_segura=_booleano(variables, "COOKIE_SEGURA"),
             confiar_proxy=_booleano(variables, "CONFIAR_PROXY"),
+            limite_general=_entero(variables, "LIMITE_GENERAL", 600, 1, 1_000_000),
+            limite_costosas=_entero(variables, "LIMITE_COSTOSAS", 30, 1, 100_000),
         )
 
 

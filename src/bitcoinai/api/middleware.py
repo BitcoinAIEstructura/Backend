@@ -1,4 +1,4 @@
-"""Middlewares ASGI: registro de peticiones, encabezados de seguridad, CORS y captura de errores.
+"""Middlewares ASGI: registro de peticiones, encabezados de seguridad, límite de peticiones, CORS y errores.
 
 De afuera hacia adentro: registro → seguridad → CORS → errores → FastAPI. Son middlewares
 ASGI "puros" (no ``BaseHTTPMiddleware``) para que funcionen también con
@@ -6,12 +6,15 @@ respuestas que quedan abiertas, como el tiempo real de la Fase 7.
 """
 
 import logging
+import math
 import time
+from collections.abc import Callable
 
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from bitcoinai.api.respuestas import respuesta_error
+from bitcoinai.seguridad.limitador import LimitadorIntentos
 
 LOG = logging.getLogger("bitcoinai.api")
 
@@ -171,3 +174,53 @@ class MiddlewareErrores:
             LOG.exception("Error no controlado en %s", scope["path"])
             if not iniciada:
                 await respuesta_error(500, "Error interno del servidor")(scope, receive, send)
+
+
+RUTAS_COSTOSAS = ("/api/ia/", "/api/estructuras/demo", "/api/si-hubiera", "/api/backtest")
+"""Las que hacen trabajar de verdad al servidor (entrenar, simular, recorrer 1000 velas)."""
+
+
+class MiddlewareLimite:
+    """Límite de peticiones por IP: una ventana deslizante de 60 s para cada grupo.
+
+    - Rutas costosas (``RUTAS_COSTOSAS``): ``maximo_costosas`` por minuto.
+    - El resto de ``/api``: ``maximo_general`` por minuto. ``/health`` no cuenta.
+
+    Al pasarse responde 429 con ``Retry-After``. La IP sale de ``X-Forwarded-For``
+    solo si se confía en el proxy (``CONFIAR_PROXY``), igual que en el inicio de sesión;
+    si no, cualquiera podría inventarse una IP nueva en cada petición.
+    """
+
+    def __init__(self, app: ASGIApp, confiar_proxy: bool = False, maximo_general: int = 600,
+                 maximo_costosas: int = 30, reloj: Callable[[], float] = time.monotonic) -> None:
+        self.app = app
+        self._confiar_proxy = confiar_proxy
+        self._general = LimitadorIntentos(maximo_general, 60, reloj)
+        self._costosas = LimitadorIntentos(maximo_costosas, 60, reloj)
+
+    def _ip(self, scope: Scope) -> str:
+        if self._confiar_proxy:
+            for nombre, valor in scope.get("headers", ()):
+                if nombre == b"x-forwarded-for":
+                    reenviada: str = bytes(valor).decode("latin-1").split(",")[0].strip()
+                    if reenviada:
+                        return reenviada[:64]
+        cliente = scope.get("client")
+        return str(cliente[0])[:64] if cliente else "desconocida"
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        ruta = scope.get("path", "") if scope["type"] == "http" else ""
+        if not ruta.startswith("/api/") or scope.get("method") == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+        ip = self._ip(scope)
+        limitador = self._costosas if ruta.startswith(RUTAS_COSTOSAS) else self._general
+        espera = limitador.espera(ip)
+        if espera > 0:
+            segundos = max(1, math.ceil(espera))
+            respuesta = respuesta_error(429, f"Demasiadas peticiones. Espera {segundos} s e intenta de nuevo.",
+                                        {"Retry-After": str(segundos)})
+            await respuesta(scope, receive, send)
+            return
+        limitador.registrar(ip)
+        await self.app(scope, receive, send)

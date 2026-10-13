@@ -7,7 +7,13 @@ from fastapi import FastAPI
 
 from bitcoinai.api.configuracion import Configuracion
 from bitcoinai.api.errores import registrar_manejadores
-from bitcoinai.api.middleware import MiddlewareCors, MiddlewareErrores, MiddlewareRegistro, MiddlewareSeguridad
+from bitcoinai.api.middleware import (
+    MiddlewareCors,
+    MiddlewareErrores,
+    MiddlewareLimite,
+    MiddlewareRegistro,
+    MiddlewareSeguridad,
+)
 from bitcoinai.api.publicador import Publicador
 from bitcoinai.api.respuestas import RespuestaJson
 from bitcoinai.api.rutas_busqueda import crear_rutas_busqueda
@@ -33,7 +39,7 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
     """Crea la API con sus dependencias (en las pruebas, una ``FuenteFalsa``).
 
     - Todas las respuestas son ``application/json; charset=utf-8``, incluidos los errores.
-    - Middlewares, de afuera hacia adentro: registro → seguridad → CORS → errores.
+    - Middlewares, de afuera hacia adentro: registro → seguridad → límite → CORS → errores.
     - Los endpoints de la simulación (de cada usuario) se registran si se pasan
       ``cuentas`` y ``gestor``; al apagar el servidor se detienen todos los bots.
     - ``GET /api/stream`` se registra si se pasa un ``publicador``; se inicia al
@@ -87,6 +93,8 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
     # El último que se agrega queda más afuera.
     app.add_middleware(MiddlewareErrores)
     app.add_middleware(MiddlewareCors, origen_permitido=config.origen_permitido)
+    app.add_middleware(MiddlewareLimite, confiar_proxy=config.confiar_proxy,
+                       maximo_general=config.limite_general, maximo_costosas=config.limite_costosas)
     app.add_middleware(MiddlewareSeguridad, hsts=config.cookie_segura)
     app.add_middleware(MiddlewareRegistro)
     return app
