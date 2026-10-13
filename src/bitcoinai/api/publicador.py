@@ -112,8 +112,8 @@ class Publicador:
 
     Eventos: ``precio`` (cada 5 s, solo si hay alguien conectado), ``orden``,
     ``cartera`` y ``senal`` (los publican el libro de órdenes y el bot a través de la
-    interfaz ``PublicadorEventos``), más un comentario ``: latido`` cada 15 s, para
-    que los proxies no corten la conexión por inactividad.
+    interfaz ``PublicadorEventos``), ``alerta`` (una alerta de precio cumplida), más un
+    comentario ``: latido`` cada 15 s, para que los proxies no corten la conexión por inactividad.
 
     **Uso de la lista doble:** los suscriptores están en una ``ListaDoble[Suscriptor]``.
     Al agregar uno se guarda su nodo (``agregar_final_nodo``); cuando se desconecta o

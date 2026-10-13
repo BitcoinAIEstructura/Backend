@@ -509,6 +509,25 @@ Los 10 usuarios con mejor rentabilidad y tu puesto. Exige sesión.
 
 `tu` es `null` si todavía no has ejecutado ninguna orden.
 
+### Alertas de precio
+
+Exigen sesión. Cada usuario puede tener hasta 20 alertas activas.
+
+| Método y ruta | Qué hace | Respuesta |
+| --- | --- | --- |
+| `POST /api/alertas` | `{"tipo":"SUBE_A","precio":90000}` o `{"tipo":"BAJA_A","precio":75000}` | 201 con la alerta |
+| `GET /api/alertas` | Las 50 más nuevas del usuario | `{"activas":n,"alertas":[…]}` |
+| `DELETE /api/alertas/{id}` | Cancela una alerta activa propia | 204 (404 si no existe, no es tuya o ya no está activa) |
+
+- **Validación:** `SUBE_A` debe estar por encima del precio actual y `BAJA_A` por debajo. Una alerta que ya se cumple no sirve (responde `400`).
+- **Campos:** `id`, `tipo`, `precio`, `estado` (`ACTIVA`, `DISPARADA` o `CANCELADA`), `creadaEn`, `disparadaEn` y `precioDisparo`.
+
+**Cómo se disparan:**
+- Las activas de todos los usuarios están en **dos montículos**. Las `SUBE_A` van en uno de mínimos, porque la más baja es la primera que se cumple al subir. Las `BAJA_A` van en uno de máximos.
+- Un vigilante revisa el precio cada 10 s, y solo si hay alertas activas. Saca de los topes las que se cumplen, en O(k log n).
+- Cancelar es perezoso: la alerta se marca en una tabla hash y se descarta cuando llega al tope.
+- Al cumplirse, su dueño recibe `event: alerta` por `/api/stream` con la alerta ya disparada.
+
 ### Bot simulado
 
 | Método y ruta | Qué hace |
@@ -632,6 +651,7 @@ data: {"simbolo":"BTCUSDT","precio":82724.02,"momento":1791434246201}
 | `orden` | El dueño | Cada vez que una orden cambia de estado: creada, procesando, ejecutada, rechazada, cancelada o deshecha | la orden completa, como en `/api/ordenes` |
 | `cartera` | El dueño | Cuando cambian el saldo o el BTC, es decir, cuando se ejecuta una orden | igual que `/api/cartera` |
 | `senal` | El dueño | Cuando cambia la decisión de la estrategia combinada. Lo publica el bot, así que solo llega con el bot en marcha; la primera decisión tras iniciarlo siempre se envía | la decisión `{tiempo, senal, precio, confianza, motivo}` |
+| `alerta` | El dueño | Cuando se cumple una de sus alertas de precio | la alerta disparada `{id, tipo, precio, estado, creadaEn, disparadaEn, precioDisparo}` |
 
 **Otros mensajes:**
 - Al conectarse llega `retry: 5000` (si se corta, el navegador reintenta a los 5 s) y el comentario `: conectado`.

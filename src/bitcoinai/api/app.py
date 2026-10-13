@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from bitcoinai.alertas.servicio import ServicioAlertas
 from bitcoinai.api.configuracion import Configuracion
 from bitcoinai.api.errores import registrar_manejadores
 from bitcoinai.api.middleware import (
@@ -16,6 +17,7 @@ from bitcoinai.api.middleware import (
 )
 from bitcoinai.api.publicador import Publicador
 from bitcoinai.api.respuestas import RespuestaJson
+from bitcoinai.api.rutas_alertas import crear_rutas_alertas
 from bitcoinai.api.rutas_busqueda import crear_rutas_busqueda
 from bitcoinai.api.rutas_cuentas import crear_rutas_cuentas
 from bitcoinai.api.rutas_estrategia import crear_rutas_estrategia
@@ -35,7 +37,8 @@ from bitcoinai.usuarios.servicio import ServicioCuentas
 
 def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Publicador | None = None,
               cuentas: ServicioCuentas | None = None, gestor: GestorSimulaciones | None = None,
-              participantes: Callable[[float], Lista[Participante]] | None = None) -> FastAPI:
+              participantes: Callable[[float], Lista[Participante]] | None = None,
+              alertas: ServicioAlertas | None = None) -> FastAPI:
     """Crea la API con sus dependencias (en las pruebas, una ``FuenteFalsa``).
 
     - Todas las respuestas son ``application/json; charset=utf-8``, incluidos los errores.
@@ -46,6 +49,8 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
       arrancar y al apagar cierra las conexiones abiertas.
     - Los endpoints de cuentas y sesión se registran si se pasa ``cuentas``.
     - ``POST /api/estructuras/demo`` siempre; ``GET /api/estructuras`` con ``cuentas`` y ``gestor``.
+    - Las alertas de precio (``/api/alertas``) se registran con ``cuentas`` y ``alertas``; su
+      vigilante arranca y se detiene con el servidor.
     - ``GET /api/liga`` se registra si se pasan ``cuentas`` y ``participantes`` (quién lee las carteras).
     - La documentación interactiva queda en ``/docs``.
     """
@@ -54,7 +59,11 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
     async def ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
         if publicador is not None:
             publicador.iniciar()
+        if alertas is not None:
+            alertas.iniciar()
         yield
+        if alertas is not None:
+            alertas.detener()
         if gestor is not None:
             gestor.detener_todos()
         if publicador is not None:
@@ -86,6 +95,8 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
         app.include_router(crear_rutas_stream(publicador, cuentas, config))
     if cuentas is not None:
         app.include_router(crear_rutas_cuentas(cuentas, config))
+    if cuentas is not None and alertas is not None:
+        app.include_router(crear_rutas_alertas(alertas, fuente, config.simbolo, cuentas, config))
     if cuentas is not None and participantes is not None:
         app.include_router(crear_rutas_liga(participantes, fuente, config.simbolo, cuentas, config))
     app.state.publicador, app.state.cuentas, app.state.gestor = publicador, cuentas, gestor
