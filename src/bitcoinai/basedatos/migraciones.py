@@ -131,6 +131,21 @@ MIGRACIONES: tuple[Migracion, ...] = (
             PRIMARY KEY (usuario_id, posicion)
         )""",
     )),
+    Migracion(3, "alertas de precio", (
+        # Las activas se cargan al arrancar en dos montículos (las que suben y las que bajan).
+        """CREATE TABLE alertas (
+            id INTEGER PRIMARY KEY,
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            tipo TEXT NOT NULL CHECK (tipo IN ('SUBE_A', 'BAJA_A')),
+            precio REAL NOT NULL CHECK (precio > 0),
+            estado TEXT NOT NULL CHECK (estado IN ('ACTIVA', 'DISPARADA', 'CANCELADA')),
+            creada_en INTEGER NOT NULL,
+            disparada_en INTEGER,
+            precio_disparo REAL
+        )""",
+        "CREATE INDEX alertas_usuario ON alertas(usuario_id, creada_en)",
+        "CREATE INDEX alertas_activas ON alertas(estado)",
+    )),
 )
 
 
