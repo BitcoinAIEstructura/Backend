@@ -18,7 +18,8 @@ class KVecinos:
     "Parecido" es la distancia euclidiana entre características escaladas. Para
     elegir los k más cercanos sin ordenar todo, se usa un montículo de máximos de
     tamaño k: su tope es el más lejano de los elegidos y solo se reemplaza si llega
-    uno más cerca. Predecir cuesta O(n · d + n log k).
+    uno más cerca. Además, la suma de cada distancia se corta en cuanto pasa a ese
+    tope (ya no puede entrar). Predecir cuesta O(n · d + n log k) en el peor caso.
 
     La probabilidad es cuántos de esos k subieron después (con suavizado de Laplace).
     """
@@ -43,14 +44,23 @@ class KVecinos:
         escalado = self.escalador.transformar(x)
         cercanos: Monticulo[tuple[float, int, int]] = Monticulo(lambda v: v[0], mayor_primero=True, capacidad=self.k)
         for punto, etiqueta, tiempo in self.pasado:
-            distancia = math.sqrt(sum((a - b) ** 2 for a, b in zip(punto, escalado, strict=True)))
-            if cercanos.tamanio() < self.k:
-                cercanos.insertar((distancia, etiqueta, tiempo))
-            elif distancia < cercanos.ver_tope()[0]:
-                cercanos.reemplazar_tope((distancia, etiqueta, tiempo))
+            # Distancia al cuadrado (ordena igual que la distancia, sin raíz), y se abandona
+            # en cuanto supera al más lejano de los k elegidos: ya no puede entrar.
+            limite = cercanos.ver_tope()[0] if cercanos.tamanio() == self.k else math.inf
+            cuadrado = 0.0
+            for a, b in zip(punto, escalado, strict=True):
+                cuadrado += (a - b) * (a - b)
+                if cuadrado >= limite:
+                    break
+            else:
+                if cercanos.tamanio() < self.k:
+                    cercanos.insertar((cuadrado, etiqueta, tiempo))
+                else:
+                    cercanos.reemplazar_tope((cuadrado, etiqueta, tiempo))
         ordenados: Lista[tuple[float, int, int]] = Lista()
         while not cercanos.esta_vacia():
-            ordenados.agregar_inicio(cercanos.extraer())  # salen del más lejano al más cercano
+            cuadrado, etiqueta, tiempo = cercanos.extraer()  # salen del más lejano al más cercano
+            ordenados.agregar_inicio((math.sqrt(cuadrado), etiqueta, tiempo))
         return ordenados
 
     def probabilidad(self, x: Vector) -> float:
