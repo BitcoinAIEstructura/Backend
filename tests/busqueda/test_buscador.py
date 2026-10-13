@@ -30,6 +30,11 @@ def test_primero_las_que_coinciden_en_el_titulo() -> None:
     assert "deshacer" in resultado  # "pila" está en su descripción
 
 
+def test_alertas_y_maquina_del_tiempo() -> None:
+    assert ids("alerta")[0] == "alertas"
+    assert ids("backtest") == ("maquina-tiempo",)
+
+
 def test_sinonimos_en_las_claves() -> None:
     assert ids("2fa") == ("dos-pasos",)
     assert ids("heap") == ("monticulo",)
