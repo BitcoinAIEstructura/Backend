@@ -14,6 +14,7 @@ from bitcoinai.api.rutas_busqueda import crear_rutas_busqueda
 from bitcoinai.api.rutas_cuentas import crear_rutas_cuentas
 from bitcoinai.api.rutas_estrategia import crear_rutas_estrategia
 from bitcoinai.api.rutas_estructuras import crear_rutas_estructuras
+from bitcoinai.api.rutas_ia import crear_rutas_ia
 from bitcoinai.api.rutas_liga import crear_rutas_liga
 from bitcoinai.api.rutas_mercado import crear_rutas_mercado
 from bitcoinai.api.rutas_simulacion import crear_rutas_simulacion
@@ -69,6 +70,7 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
         publicador.usar_recientes(recientes)
     app.include_router(crear_rutas_mercado(fuente, config.simbolo, recientes))
     app.include_router(crear_rutas_estrategia(fuente, config.simbolo))
+    app.include_router(crear_rutas_ia(fuente, config.simbolo))
     buscador = Buscador()  # el trie se arma una sola vez
     app.include_router(crear_rutas_busqueda(buscador))
     app.include_router(crear_rutas_estructuras(gestor, cuentas, recientes, buscador, config))

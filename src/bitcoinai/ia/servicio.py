@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from bitcoinai.estructuras import Lista
-from bitcoinai.ia.arbol import ArbolDecision
+from bitcoinai.ia.arbol import ArbolDecision, NodoDecision
 from bitcoinai.ia.base import Explicacion, Modelo
 from bitcoinai.ia.caracteristicas import construir_muestras
 from bitcoinai.ia.comite import Comite
@@ -66,6 +66,8 @@ class PrediccionIA:
     modelos: tuple[ResultadoModelo, ...]
     comite: ResultadoModelo
     prueba: Lista[PuntoPrueba]
+    caracteristicas: tuple[float, ...]  # las de la vela de ahora, en el orden de NOMBRES
+    arbol: NodoDecision | None  # el árbol entrenado, para dibujarlo
     aviso: str = AVISO
 
 
@@ -122,5 +124,6 @@ class ServicioIA:
             pares.agregar((probabilidad, m.etiqueta))
         del_comite = ResultadoModelo(comite.nombre, comite.probabilidad(ultima), comite.explicar(ultima),
                                      metricas_de(pares))
+        arbol = next((m.raiz for m in comite.miembros if isinstance(m, ArbolDecision)), None)
         return PrediccionIA(intervalo.codigo, tiempo_ultima, int(ahora * 1000), entrenamiento.tamanio(),
-                            prueba.tamanio(), resultados, del_comite, puntos)
+                            prueba.tamanio(), resultados, del_comite, puntos, ultima, arbol)

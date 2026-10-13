@@ -359,6 +359,44 @@ Resultados reales con 999 velas diarias de BTCUSDT, capital 1000 y comisión 0,1
 
 En todo el periodo, ninguna estrategia superó a comprar y mantener.
 
+## Inteligencia artificial: `GET /api/ia/predicciones`
+
+Tres modelos hechos a mano y un comité dicen si la próxima vela cerrará más arriba. Es pública. Ver [docs/IA.md](IA.md).
+
+| Parámetro | Valores | Por defecto |
+| --- | --- | --- |
+| `intervalo` | `15m`, `1h`, `4h`, `1d` | `1h` |
+
+- **Datos:** se toman las últimas 1000 velas cerradas. Los modelos se entrenan con el 80 % más viejo y se miden con el 20 % más reciente, que no vieron. El modelo que predice es el mismo que se midió.
+- **Caché:** la primera petición de cada intervalo entrena, y tarda unos segundos. Las siguientes, durante 10 minutos, salen de la caché (`entrenadoEn` no cambia).
+- **Métricas:**
+  - `exactitud`: aciertos ÷ predicciones.
+  - `base`: lo que acertaría decir siempre lo que más pasó en esas mismas velas.
+  - `ventaja`: `exactitud − base`. Si es negativa, al modelo le fue peor que no hacer nada.
+  - `precisionSube`: de las veces que dijo "sube", qué fracción subió. Es `null` si nunca lo dijo.
+- **`explicacion.factores`:** su significado depende del modelo:
+  - Regresión logística: el aporte de cada característica (positivo empuja a subir).
+  - Árbol: cuánto bajó el Gini gracias a cada característica (suman 1).
+  - k vecinos: cuántas desviaciones se aleja la vela de ahora del promedio.
+  - Comité: cuánto empuja cada miembro.
+- **`arbol`:** el árbol entrenado, con `enCamino` en las ramas por las que pasó la vela de ahora.
+- **`prueba`:** lo que dijo el comité en cada vela de prueba y si subió.
+
+```json
+{"simbolo":"BTCUSDT","intervalo":"1h","tiempoVela":1791820800000,"entrenadoEn":1791824400000,
+ "muestrasEntrenamiento":759,"muestrasPrueba":190,
+ "comite":{"nombre":"Comité","probabilidad":0.53,"direccion":"SUBE","confianza":0.06,"peso":null,
+   "explicacion":{"resumen":"2 de 3 modelos creen que sube; el que más pesa es k vecinos.","factores":[…],"pasos":[…]},
+   "metricas":{"muestras":190,"exactitud":0.53,"base":0.51,"ventaja":0.02,"precisionSube":0.54,"vecesDijoSube":120}},
+ "modelos":[{"nombre":"Regresión logística",…,"peso":0.31},{"nombre":"Árbol de decisión",…},{"nombre":"k vecinos",…}],
+ "caracteristicas":[{"nombre":"Rendimiento de la última vela","valor":-0.0012},…],
+ "arbol":{"hoja":false,"caracteristica":"RSI 14","umbral":31.9,"muestras":759,"probabilidad":0.51,"enCamino":true,"si":{…},"no":{…}},
+ "prueba":[{"tiempo":1791140400000,"probabilidad":0.55,"subio":true},…],
+ "aviso":"Predicción hecha con datos reales del pasado. … No es asesoría financiera."}
+```
+
+Responde `400` si el intervalo no está permitido, `502` si Binance no responde y `503` si no hay velas suficientes (hacen falta al menos 200 muestras).
+
 ## Simulación de operaciones (paper trading)
 
 > **Todo es simulado:** no hay dinero real, ni conexión a una cuenta de exchange, ni claves de API. El único dato externo es el precio público de Binance, que se usa para ejecutar las órdenes simuladas.
