@@ -26,7 +26,7 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se�
 - La guía de prompts está en `docs/GUIA-MIGRACION-PYTHON.md`.
 
 ## Paquetes (bajo `src/bitcoinai`)
-`estructuras`, `modelo`, `mercado`, `indicadores`, `estrategia`, `simulacion`, `api`, `persistencia`, `basedatos`, `seguridad`, `usuarios`, `busqueda`. Pruebas en `tests/`.
+`estructuras`, `modelo`, `mercado`, `indicadores`, `estrategia`, `simulacion`, `api`, `persistencia`, `basedatos`, `seguridad`, `usuarios`, `busqueda`, `ia` (ver `docs/IA.md`). Pruebas en `tests/`.
 
 ## Comandos
 - Crear el entorno (una vez): `py -3.13 -m venv .venv`
@@ -59,6 +59,6 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se�
 - [x] 3. Frontend nuevo: inicio de sesión con moneda 3D y diseño futurista adaptable
 - [x] 4. Panel con gráficas en vivo
 - [x] 5. Estructuras avanzadas (montículo, árbol AVL, tabla hash, cola circular, trie) y pantalla "Cómo funciona"
-- [ ] 6. IA: regresión logística, árbol de decisión, k vecinos y comité
+- [x] 6. IA: regresión logística, árbol de decisión, k vecinos y comité
 - [ ] 7. Seguridad extra y pulido
 - [ ] 8. Entrega: despliegue, documentación y presentación
