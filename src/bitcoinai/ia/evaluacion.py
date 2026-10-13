@@ -1,5 +1,6 @@
 """Evaluación honesta: se entrena con el pasado y se mide con lo que vino después."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from bitcoinai.estructuras import Lista
@@ -48,16 +49,24 @@ class Metricas:
 
 def evaluar(modelo: Modelo, prueba: Lista[Muestra]) -> Metricas:
     """O(n · costo de predecir)."""
-    if prueba.esta_vacia():
-        raise ValueError("No hay muestras de prueba")
-    aciertos = dijo_sube = acerto_sube = subidas = 0
+    pares: Lista[tuple[float, int]] = Lista()
     for m in prueba:
-        sube = modelo.probabilidad(m.caracteristicas) >= 0.5
-        aciertos += int(sube == bool(m.etiqueta))
-        subidas += m.etiqueta
+        pares.agregar((modelo.probabilidad(m.caracteristicas), m.etiqueta))
+    return metricas_de(pares)
+
+
+def metricas_de(pares: Iterable[tuple[float, int]]) -> Metricas:
+    """Métricas a partir de (probabilidad dicha, etiqueta real), si ya se calcularon. O(n)."""
+    aciertos = dijo_sube = acerto_sube = subidas = n = 0
+    for probabilidad, etiqueta in pares:
+        sube = probabilidad >= 0.5
+        aciertos += int(sube == bool(etiqueta))
+        subidas += etiqueta
+        n += 1
         if sube:
             dijo_sube += 1
-            acerto_sube += m.etiqueta
-    n = prueba.tamanio()
+            acerto_sube += etiqueta
+    if n == 0:
+        raise ValueError("No hay muestras de prueba")
     return Metricas(n, aciertos / n, max(subidas, n - subidas) / n,
                     acerto_sube / dijo_sube if dijo_sube else None, dijo_sube)
