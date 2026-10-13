@@ -67,7 +67,8 @@ def test_envia_saludo_eventos_y_latidos(servidor: Servidor) -> None:
 def revisar_stream(r: httpx.Response, cliente: httpx.Client) -> None:
     assert r.status_code == 200
     assert r.headers["content-type"] == "text/event-stream; charset=utf-8"
-    assert r.headers["cache-control"] == "no-cache"
+    # no-transform: que ningún proxy (ni el compresor de Next.js) lo comprima: con gzip llega todo junto al final.
+    assert r.headers["cache-control"] == "no-cache, no-transform"
     assert r.headers["x-accel-buffering"] == "no"
     assert r.headers["access-control-allow-origin"] == "*"
     lineas = r.iter_lines()

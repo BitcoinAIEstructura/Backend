@@ -288,7 +288,7 @@ class RespuestaStream(StreamingResponse):
 
     def __init__(self, publicador: Publicador, suscriptor: Suscriptor) -> None:
         super().__init__(publicador.mensajes(suscriptor), media_type="text/event-stream; charset=utf-8",
-                         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                         headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
         self._publicador = publicador
         self._suscriptor = suscriptor
 
