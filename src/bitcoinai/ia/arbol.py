@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from bitcoinai.estructuras import Lista
-from bitcoinai.ia.base import Explicacion, Vector, por_peso
+from bitcoinai.ia.base import Explicacion, Vector, por_peso, porcentaje
 from bitcoinai.ia.caracteristicas import NOMBRES, Muestra
 
 UMBRALES_POR_CARACTERISTICA = 15
@@ -133,7 +133,7 @@ class ArbolDecision:
         total = sum(self.importancia) or 1.0
         factores = por_peso((nombre, v / total) for nombre, v in zip(NOMBRES, self.importancia, strict=True) if v > 0)
         final = (f"Llegó a una hoja con {hoja.muestras} velas del entrenamiento: después de ellas "
-                 f"subió el {hoja.probabilidad:.0%} de las veces.")
+                 f"subió el {porcentaje(hoja.probabilidad)} de las veces.")
         return Explicacion(resumen=final, factores=factores, pasos=(*pasos, final))
 
     def profundidad(self) -> int:

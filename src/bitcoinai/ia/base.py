@@ -90,3 +90,8 @@ def por_peso(factores: Iterable[tuple[str, float]]) -> tuple[tuple[str, float], 
     while not monticulo.esta_vacia():
         ordenados += (monticulo.extraer(),)
     return ordenados
+
+
+def porcentaje(fraccion: float) -> str:
+    """0,537 → "54 %" (con espacio, como se escribe en español)."""
+    return f"{fraccion * 100:.0f} %"
