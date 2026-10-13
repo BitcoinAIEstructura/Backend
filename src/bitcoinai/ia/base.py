@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
-from bitcoinai.estructuras import Lista
+from bitcoinai.estructuras import Lista, Monticulo
 from bitcoinai.ia.caracteristicas import Muestra
 
 type Vector = tuple[float, ...]
@@ -79,3 +79,14 @@ def sigmoide(z: float) -> float:
         return 1 / (1 + math.exp(-z))
     e = math.exp(z)
     return e / (1 + e)
+
+
+def por_peso(factores: Iterable[tuple[str, float]]) -> tuple[tuple[str, float], ...]:
+    """Los factores del que más pesa al que menos (por valor absoluto), con un montículo. O(d log d)."""
+    monticulo: Monticulo[tuple[str, float]] = Monticulo(lambda f: abs(f[1]), mayor_primero=True)
+    for f in factores:
+        monticulo.insertar(f)
+    ordenados: tuple[tuple[str, float], ...] = ()
+    while not monticulo.esta_vacia():
+        ordenados += (monticulo.extraer(),)
+    return ordenados
