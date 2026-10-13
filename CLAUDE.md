@@ -36,6 +36,7 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se√
 - Prueba manual con Binance real (necesita internet): `pytest -m manual -s`
 - Estilo: `ruff check` (corregir orden de imports: `ruff check --fix`)
 - Tipos: `mypy src`
+- Auditor√≠a de dependencias: `python -m pip_audit` (y `npm audit --omit=dev` en el frontend)
 - Ejecutar: `python -m bitcoinai`
 
 ## Convenciones
