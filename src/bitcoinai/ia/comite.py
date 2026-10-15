@@ -56,5 +56,8 @@ class Comite:
         # Cada miembro "empuja" según qué tan lejos de 50 % está y cuánto pesa.
         factores = por_peso((nombre, (prob - 0.5) * peso) for nombre, prob, peso in votos)
         a_favor = sum(1 for _, prob, _ in votos if prob >= 0.5)
-        resumen = f"{a_favor} de {len(votos)} modelos creen que sube; el que más pesa es {factores[0][0]}."
+        # "Empuja" y no "pesa": con pesos iguales, igual hay uno que mueve más el resultado.
+        nombre, empuje = factores[0]
+        hacia = "subir" if empuje >= 0 else "bajar"
+        resumen = f"{a_favor} de {len(votos)} modelos creen que sube; el que más empuja es {nombre}, hacia {hacia}."
         return Explicacion(resumen=resumen, factores=factores, pasos=pasos)

@@ -62,7 +62,7 @@ def test_el_comite_pesa_mas_al_que_sabe() -> None:
     assert sum(comite.pesos) == pytest.approx(1.0)
     assert exactitud(comite, separables(200, semilla=8)) > 0.9
     e = comite.explicar(vector(20))
-    assert e.resumen == "2 de 2 modelos creen que sube; el que más pesa es Regresión logística."
+    assert e.resumen == "2 de 2 modelos creen que sube; el que más empuja es Regresión logística, hacia subir."
     assert e.pasos[1].startswith("Azar: 50 % de que suba")
 
 
