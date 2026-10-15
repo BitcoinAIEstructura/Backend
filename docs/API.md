@@ -561,6 +561,25 @@ En cada ciclo el bot:
 
 Si un ciclo falla (por ejemplo, Binance no responde), queda en `ultimoError` y en el historial, y el bot sigue con el siguiente.
 
+### Chat con el bot: `POST /api/asistente`
+
+Exige sesión (la revisa antes que el cuerpo). Cuerpo: `{"mensaje":"¿qué estás haciendo?"}`, de 1 a 300 caracteres; vacío o más largo → `400`.
+
+Responde preguntas sencillas con los datos de esa persona: qué hace el bot y cuándo es su próxima revisión, por qué tomó su última decisión, cuánto ha ganado, el precio, las órdenes en espera y la página de la IA. También explica palabras como «stop loss», «take profit», «RSI», «MACD», «vela», «USDT» o «comisión». No usa servicios externos: entiende el mensaje con un trie de raíces (ver `docs/ESTRUCTURAS.md`).
+
+```json
+{
+  "intencion": "iniciar-bot",
+  "respuesta": "¿Me enciendo? Revisaré el mercado cada minuto y usaré el 20 % de tus USDT en cada compra. …",
+  "accion": {"tipo": "INICIAR_BOT", "etiqueta": "Sí, enciéndete", "ruta": null},
+  "sugerencias": ["¿Qué estás haciendo?", "Detente"]
+}
+```
+
+- `intencion`: `saludo`, `gracias`, `ayuda`, `estado-bot`, `iniciar-bot`, `detener-bot`, `por-que`, `ganancia`, `precio`, `ordenes`, `ia`, `concepto:<id>` o `no-entendi`.
+- `accion` (o `null`): `INICIAR_BOT`, `DETENER_BOT` o `IR` (con `ruta`). **El asistente nunca enciende ni detiene el bot por su cuenta**: el frontend muestra la acción como un botón y, si la persona lo toca, llama a `POST /api/bot/iniciar` o `/api/bot/detener`.
+- Si no hay precio (Binance no responde), igual contesta lo del bot y avisa que no pudo valorar la cartera.
+
 ### Probar con curl
 
 En PowerShell 5.1, `curl.exe` pierde las comillas del JSON. Ahí es más fácil `Invoke-RestMethod -Method Post <url> -ContentType 'application/json' -Body '{"tipo":"COMPRA","monto":500}'`. En bash o Git Bash:

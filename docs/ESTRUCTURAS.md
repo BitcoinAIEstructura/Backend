@@ -52,6 +52,8 @@ Las clases conservan el nombre que tenían en Java.
 | `ArbolAVL[int, Vela]` | `IndiceVelas` | `techo(fecha)` da la vela de un día en O(log n); `rango(fecha, hoy)` recorre solo las de después |
 | `TablaHash[int, None]`, `TablaHash[str, None]` | `Buscador` | Junta las entradas de cada palabra sin repetirlas y cruza las de varias palabras |
 | `Trie[Lista[int]]` | `Buscador` | Cada palabra normalizada lleva a las entradas del catálogo donde aparece |
+| `Trie[Lista[Voto]]` | `Asistente` | Raíces de palabras ("encend", "encendido") con sus votos. Para cada palabra del mensaje se toma la raíz más larga con la que empieza, recorriendo sus comienzos hasta que el trie no tenga ese prefijo |
+| `TablaHash[str, float]` | `Asistente.entender` | Suma los votos de cada intención; gana la de mayor puntaje (los empates, por el orden del catálogo) |
 | `ColaCircular[tuple[int, float]]` | `PreciosRecientes` | Últimos 120 precios: el nuevo pisa al más viejo en O(1) |
 | `Pila[int]` (auxiliar) | `LibroDeOrdenes.pila_deshacer` | Lee los k próximos ids a deshacer sin perderlos |
 

@@ -34,6 +34,8 @@ CATALOGO: tuple[Entrada, ...] = (
             "/bot#maquina-del-tiempo", "pagina", "backtest simulacion historico estrategia"),
     Entrada("alertas", "Alertas de precio", "Avísame cuando el BTC suba o baje a un precio", "/mercado#alertas",
             "accion", "aviso notificacion"),
+    Entrada("chat-bot", "Chat con el bot", "Pregúntale al bot qué hace, por qué decidió y qué significa algo",
+            "/bot#chat", "accion", "asistente conversar preguntar mensaje ayuda"),
     Entrada("ia", "Predicciones IA", "Modelos que aprenden del mercado y por qué deciden", "/ia", "pagina",
             "inteligencia artificial prediccion"),
     Entrada("como-funciona", "Cómo funciona", "Las estructuras de datos de la plataforma, en vivo", "/como-funciona",

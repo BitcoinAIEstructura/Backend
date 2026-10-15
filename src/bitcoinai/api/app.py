@@ -18,6 +18,7 @@ from bitcoinai.api.middleware import (
 from bitcoinai.api.publicador import Publicador
 from bitcoinai.api.respuestas import RespuestaJson
 from bitcoinai.api.rutas_alertas import crear_rutas_alertas
+from bitcoinai.api.rutas_asistente import crear_rutas_asistente
 from bitcoinai.api.rutas_busqueda import crear_rutas_busqueda
 from bitcoinai.api.rutas_cuentas import crear_rutas_cuentas
 from bitcoinai.api.rutas_estrategia import crear_rutas_estrategia
@@ -44,7 +45,8 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
     - Todas las respuestas son ``application/json; charset=utf-8``, incluidos los errores.
     - Middlewares, de afuera hacia adentro: registro → seguridad → límite → CORS → errores.
     - Los endpoints de la simulación (de cada usuario) se registran si se pasan
-      ``cuentas`` y ``gestor``; al apagar el servidor se detienen todos los bots.
+      ``cuentas`` y ``gestor`` (también el chat con el bot, ``POST /api/asistente``); al apagar
+      el servidor se detienen todos los bots.
     - ``GET /api/stream`` se registra si se pasa un ``publicador``; se inicia al
       arrancar y al apagar cierra las conexiones abiertas.
     - Los endpoints de cuentas y sesión se registran si se pasa ``cuentas``.
@@ -91,6 +93,7 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
     app.include_router(crear_rutas_estructuras(gestor, cuentas, recientes, buscador, config))
     if gestor is not None and cuentas is not None:
         app.include_router(crear_rutas_simulacion(gestor, cuentas, config))
+        app.include_router(crear_rutas_asistente(gestor, cuentas, config))
     if publicador is not None:
         app.include_router(crear_rutas_stream(publicador, cuentas, config))
     if cuentas is not None:
