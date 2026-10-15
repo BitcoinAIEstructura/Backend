@@ -173,8 +173,10 @@ def test_iniciar_consultar_y_detener_el_bot(cliente: TestClient) -> None:
     assert (configuracion["segundosEntreCiclos"], configuracion["riesgo"], configuracion["intervalo"]) == (
         3600, 0.1, "1d")
     assert configuracion["stopLoss"] == 0.05  # por defecto
+    assert isinstance(estado["encendidoDesde"], int) and isinstance(estado["enCiclo"], bool)
     assert_error(post(cliente, "/api/bot/iniciar"), 409, "ya está en marcha")
-    assert post(cliente, "/api/bot/detener").json()["activo"] is False
+    detenido = post(cliente, "/api/bot/detener").json()
+    assert (detenido["activo"], detenido["encendidoDesde"]) == (False, None)
     assert post(cliente, "/api/bot/detener").json()["activo"] is False
 
 

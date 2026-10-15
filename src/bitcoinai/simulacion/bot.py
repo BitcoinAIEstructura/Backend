@@ -56,7 +56,11 @@ class ConfiguracionBot:
 
 @dataclass(frozen=True, slots=True)
 class EstadoBot:
-    """Estado del bot: si está activo, su configuración, ciclos y la última decisión o error."""
+    """Estado del bot: si está activo, su configuración, ciclos y la última decisión o error.
+
+    ``encendido_desde`` es cuándo se encendió (ms; None si está detenido) y ``en_ciclo``
+    dice si en este momento está revisando el mercado: así se ve que trabaja.
+    """
 
     activo: bool
     estrategia: str
@@ -65,6 +69,8 @@ class EstadoBot:
     ultimo_ciclo: int | None
     ultima_decision: Decision | None
     ultimo_error: str | None
+    encendido_desde: int | None = None
+    en_ciclo: bool = False
 
 
 class BotSimulado:
@@ -105,6 +111,8 @@ class BotSimulado:
         self._ultimo_ciclo: int | None = None
         self._ultima_decision: Decision | None = None
         self._ultimo_error: str | None = None
+        self._encendido_desde: int | None = None
+        self._en_ciclo = False
         self._publicador: PublicadorEventos = SinPublicar()
         self._ultima_senal_publicada: Senal | None = None
 
@@ -123,6 +131,7 @@ class BotSimulado:
                 raise OperacionInvalidaError("El bot ya está en marcha; deténlo antes de iniciarlo de nuevo")
             self._configuracion = configuracion
             self._ultima_senal_publicada = None
+            self._encendido_desde = self._reloj()
             parar = threading.Event()
             self._parar = parar
             hilo = threading.Thread(target=self._bucle, args=(parar, configuracion.segundos_entre_ciclos),
@@ -142,13 +151,15 @@ class BotSimulado:
             if self._parar is not None:
                 self._parar.set()
                 self._parar = None
+                self._encendido_desde = None
                 self._libro.registrar_evento(TipoEvento.BOT_DETENIDO, None, "Bot detenido.")
             return self.estado()
 
     def estado(self) -> EstadoBot:
         """Estado actual del bot."""
         return EstadoBot(self._parar is not None, self._estrategia.nombre(), self._configuracion, self._ciclos,
-                         self._ultimo_ciclo, self._ultima_decision, self._ultimo_error)
+                         self._ultimo_ciclo, self._ultima_decision, self._ultimo_error,
+                         self._encendido_desde, self._en_ciclo)
 
     def _bucle(self, parar: threading.Event, segundos: int) -> None:
         # "Espera fija" entre ciclos: un ciclo nunca se superpone con el siguiente.
@@ -163,6 +174,7 @@ class BotSimulado:
         """
         with self._candado_ciclo:
             config = self._configuracion
+            self._en_ciclo = True
             try:
                 velas = velas_cerradas(self._fuente.obtener_velas(
                     self._simbolo, Intervalo.desde_codigo(config.intervalo), config.cantidad_velas), self._reloj())
@@ -188,6 +200,7 @@ class BotSimulado:
             finally:
                 self._ciclos += 1
                 self._ultimo_ciclo = self._reloj()
+                self._en_ciclo = False
 
     def _revisar_salida_de_riesgo(self, cartera: EstadoCartera, precio: float, config: ConfiguracionBot) -> bool:
         """Stop-loss y take-profit. Devuelve True si creó una orden de venta."""

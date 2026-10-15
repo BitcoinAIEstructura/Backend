@@ -534,7 +534,7 @@ Exigen sesión. Cada usuario puede tener hasta 20 alertas activas.
 | --- | --- |
 | `POST /api/bot/iniciar` | Lo pone en marcha; el primer ciclo es inmediato. Cuerpo opcional (abajo). 409 si ya estaba en marcha |
 | `POST /api/bot/detener` | Lo detiene (si ya estaba detenido, no hace nada) |
-| `GET /api/bot/estado` | `{activo, estrategia, configuracion, ciclos, ultimoCiclo, ultimaDecision, ultimoError}` |
+| `GET /api/bot/estado` | `{activo, estrategia, configuracion, ciclos, ultimoCiclo, ultimaDecision, ultimoError, encendidoDesde, enCiclo}`. `encendidoDesde` es cuándo se encendió (ms, `null` si está detenido) y `enCiclo` es `true` mientras revisa el mercado |
 
 Cuerpo de `iniciar`; todos los campos son opcionales:
 

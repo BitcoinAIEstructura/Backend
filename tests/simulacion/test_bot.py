@@ -3,9 +3,10 @@ from collections.abc import Iterator
 
 import pytest
 
-from bitcoinai.estrategia import Senal
+from bitcoinai.estrategia import Decision, Senal
+from bitcoinai.estructuras import ListaDoble
 from bitcoinai.mercado import MercadoError
-from bitcoinai.modelo import Intervalo
+from bitcoinai.modelo import Intervalo, Vela
 from bitcoinai.simulacion import (
     BotSimulado,
     Cartera,
@@ -205,3 +206,33 @@ def test_configuracion_invalida(datos: dict[str, object]) -> None:
 
 def test_configuracion_por_defecto() -> None:
     assert ConfiguracionBot() == ConfiguracionBot(60, "1h", 200, 0.2, 0.05, 0.1)
+
+
+class EstrategiaQueMira(EstrategiaManual):
+    """Anota si el bot decía «en ciclo» mientras la estrategia trabajaba."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.bot: BotSimulado | None = None
+        self.vio_en_ciclo: bool | None = None
+
+    def evaluar(self, velas_hasta_ahora: ListaDoble[Vela] | None) -> Decision:
+        assert self.bot is not None
+        self.vio_en_ciclo = self.bot.estado().en_ciclo
+        return super().evaluar(velas_hasta_ahora)
+
+
+def test_encendido_desde_y_en_ciclo_muestran_que_trabaja(libro: LibroDeOrdenes, fuente: FuenteFalsa) -> None:
+    estrategia = EstrategiaQueMira()
+    reloj = iter(range(1_000, 10_000_000, 1_000))
+    bot = BotSimulado(libro, fuente, estrategia, "BTCUSDT", reloj=lambda: next(reloj))
+    estrategia.bot = bot
+    assert bot.estado().encendido_desde is None and not bot.estado().en_ciclo
+    bot.ejecutar_ciclo()
+    assert estrategia.vio_en_ciclo is True, "durante el ciclo debía decir que está revisando"
+    assert not bot.estado().en_ciclo, "al terminar ya no está en ciclo"
+    try:
+        desde = bot.iniciar(ConfiguracionBot(3600, "1h", 50, 0.2, 0.05, 0.1)).encendido_desde
+        assert desde is not None and desde > 0
+    finally:
+        assert bot.detener().encendido_desde is None

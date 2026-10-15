@@ -194,6 +194,8 @@ def bot_a_json(e: EstadoBot) -> dict[str, Any]:
         "ultimoCiclo": e.ultimo_ciclo,
         "ultimaDecision": decision_a_json(e.ultima_decision) if e.ultima_decision is not None else None,
         "ultimoError": e.ultimo_error,
+        "encendidoDesde": e.encendido_desde,
+        "enCiclo": e.en_ciclo,
     }
 
 
