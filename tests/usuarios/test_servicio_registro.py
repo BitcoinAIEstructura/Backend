@@ -7,7 +7,7 @@ from tests.usuarios.entorno import CLIENTE, CONTRASENA, crear_entorno, datos
 
 def test_registrar_crea_la_cuenta_y_abre_sesion() -> None:
     e = crear_entorno()
-    usuario, token = e.servicio.registrar(datos(), CLIENTE)
+    usuario, token = e.servicio.registrar(datos(), CLIENTE).sesion()
     assert usuario.correo == "ana@correo.co"
     sesion = e.servicio.sesiones.validar(token)
     assert sesion is not None and sesion.usuario_id == usuario.id

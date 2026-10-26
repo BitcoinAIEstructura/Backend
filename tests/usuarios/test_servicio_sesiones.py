@@ -19,7 +19,7 @@ def entrar(e: Entorno, contrasena: str = CONTRASENA, ip: str = "127.0.0.1") -> s
 
 def test_sesion_actual_y_cerrar() -> None:
     e = crear_entorno()
-    _, token = e.servicio.registrar(datos(), CLIENTE)
+    _, token = e.servicio.registrar(datos(), CLIENTE).sesion()
     usuario, sesion = e.servicio.sesion_actual(token)
     assert usuario.correo == "ana@correo.co" and sesion.usuario_id == usuario.id
     e.servicio.cerrar_sesion(token, CLIENTE)
@@ -31,7 +31,7 @@ def test_sesion_actual_y_cerrar() -> None:
 
 def test_ver_y_cerrar_sesiones_de_otros_dispositivos() -> None:
     e = crear_entorno()
-    _, actual = e.servicio.registrar(datos(), CLIENTE)
+    _, actual = e.servicio.registrar(datos(), CLIENTE).sesion()
     otro = entrar(e, ip="10.0.0.2")
     entrar(e, ip="10.0.0.3")
     _, sesion_actual = e.servicio.sesion_actual(actual)
@@ -46,7 +46,7 @@ def test_ver_y_cerrar_sesiones_de_otros_dispositivos() -> None:
 
 def test_cambiar_contrasena_cierra_las_demas_sesiones() -> None:
     e = crear_entorno()
-    _, actual = e.servicio.registrar(datos(), CLIENTE)
+    _, actual = e.servicio.registrar(datos(), CLIENTE).sesion()
     otro = entrar(e)
     _, sesion = e.servicio.sesion_actual(actual)
     e.servicio.cambiar_contrasena(1, CONTRASENA, "Sol-Azul-Brillante-9", sesion.id, CLIENTE)
@@ -66,7 +66,7 @@ def test_cambiar_contrasena_cierra_las_demas_sesiones() -> None:
 ])
 def test_cambio_de_contrasena_rechazado(actual: str, nueva: str, error: type[Exception]) -> None:
     e = crear_entorno()
-    _, token = e.servicio.registrar(datos(), CLIENTE)
+    _, token = e.servicio.registrar(datos(), CLIENTE).sesion()
     _, sesion = e.servicio.sesion_actual(token)
     with pytest.raises(error):
         e.servicio.cambiar_contrasena(1, actual, nueva, sesion.id, CLIENTE)

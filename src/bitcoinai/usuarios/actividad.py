@@ -15,6 +15,7 @@ from bitcoinai.estructuras import Lista
 
 class TipoActividad(Enum):
     REGISTRO = "Cuenta creada"
+    CORREO_VERIFICADO = "Correo confirmado"
     INICIO_SESION = "Inicio de sesión"
     INICIO_FALLIDO = "Intento de inicio de sesión fallido"
     CODIGO_FALLIDO = "Código de verificación incorrecto"

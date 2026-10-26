@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 from bitcoinai.basedatos import BaseDatos
 from bitcoinai.estructuras import Lista
+from bitcoinai.notificaciones import EnviadorCorreo
+from bitcoinai.notificaciones.plantillas import codigo_verificacion
 from bitcoinai.seguridad import totp
 from bitcoinai.seguridad.cifrado import Cifrador
 from bitcoinai.seguridad.contrasenas import HashContrasenas
@@ -21,6 +23,13 @@ from bitcoinai.usuarios.modelo import Credenciales, DatosRegistro, Usuario
 from bitcoinai.usuarios.repositorio import RepositorioUsuarios, UsuarioDuplicadoError
 from bitcoinai.usuarios.sesiones import RepositorioSesiones, Sesion
 from bitcoinai.usuarios.validacion import DatoInvalidoError, normalizar_correo
+from bitcoinai.usuarios.verificacion import (
+    DURACION_CODIGO,
+    INTENTOS_CODIGO,
+    MINUTO,
+    RepositorioVerificaciones,
+    generar_codigo,
+)
 
 FALLOS_POR_CORREO = 5
 FALLOS_POR_IP = 20
@@ -71,6 +80,20 @@ class SesionInvalidaError(CuentaError):
         super().__init__("Tu sesión terminó; vuelve a iniciar sesión")
 
 
+class VerificacionVencidaError(CuentaError):
+    def __init__(self) -> None:
+        super().__init__("El código venció o tuvo demasiados intentos; pide uno nuevo")
+
+
+class EsperaReenvioError(CuentaError):
+    """Se pidió otro código demasiado pronto; ``espera`` en segundos."""
+
+    def __init__(self, espera: float) -> None:
+        segundos = max(1, round(espera))
+        super().__init__(f"Espera {segundos} s para pedir otro código")
+        self.espera = espera
+
+
 class OperacionCuentaError(CuentaError):
     """La operación no tiene sentido en el estado actual de la cuenta (por ejemplo, activar 2FA dos veces)."""
 
@@ -89,11 +112,41 @@ class ResultadoInicio:
 
     - Sin verificación en dos pasos: ``usuario`` y ``token_sesion``.
     - Con verificación en dos pasos: solo ``token_desafio``; falta el código de 6 dígitos.
+    - Si aún no confirmó el correo: ``token_verificacion`` y ``correo`` (enmascarado); falta
+      el código que llegó (o que se acaba de reenviar) al correo.
     """
 
     usuario: Usuario | None = None
     token_sesion: str | None = None
     token_desafio: str | None = None
+    token_verificacion: str | None = None
+    correo: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResultadoRegistro:
+    """Cuenta creada. Con correo por confirmar: ``token_verificacion`` (sin sesión todavía);
+    si no se exige confirmar (sin enviador de correo, como en las pruebas): ``token_sesion``."""
+
+    usuario: Usuario
+    token_sesion: str | None = None
+    token_verificacion: str | None = None
+
+    @property
+    def correo(self) -> str:
+        return correo_enmascarado(self.usuario.correo)
+
+    def sesion(self) -> tuple[Usuario, str]:
+        """El usuario y su sesión, cuando la cuenta quedó abierta al crearla."""
+        assert self.token_sesion is not None, "la cuenta espera confirmar el correo"
+        return self.usuario, self.token_sesion
+
+
+def correo_enmascarado(correo: str) -> str:
+    """De "valentina@prueba.co" deja "va*******@prueba.co": se reconoce sin mostrarlo entero."""
+    nombre, _, dominio = correo.partition("@")
+    visibles = min(2, max(1, len(nombre) // 3))
+    return f"{nombre[:visibles]}{'*' * max(3, len(nombre) - visibles)}@{dominio}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,12 +163,18 @@ class ServicioCuentas:
     def __init__(self, bd: BaseDatos, cifrador: Cifrador, hasher: HashContrasenas,
                  reloj_ms: Callable[[], int] = lambda: int(time.time() * 1000),
                  reloj_s: Callable[[], float] = time.time,
-                 limite_registro: LimitadorIntentos | None = None) -> None:
+                 limite_registro: LimitadorIntentos | None = None,
+                 correo: EnviadorCorreo | None = None) -> None:
+        """Con ``correo``, las cuentas nuevas confirman su correo con un código antes de entrar.
+        Sin él (las pruebas que no tratan del correo), la cuenta queda abierta al crearla."""
         self.usuarios = RepositorioUsuarios(bd, cifrador, reloj_ms)
+        self.verificaciones = RepositorioVerificaciones(bd, reloj_ms)
+        self._correo = correo
         self.sesiones = RepositorioSesiones(bd, reloj_ms)
         self.actividad = RegistroActividad(bd, reloj_ms)
         self._hasher = hasher
         self._reloj_s = reloj_s
+        self._reloj_ms = reloj_ms
         # 10 cuentas por hora desde una misma IP: frena la creación masiva de cuentas.
         self._limite_registro = limite_registro or LimitadorIntentos(10, 3600)
         # Contraseñas equivocadas: 5 por correo y 20 por IP cada 15 minutos.
@@ -123,14 +182,14 @@ class ServicioCuentas:
         self._fallos_ip = LimitadorIntentos(FALLOS_POR_IP, VENTANA_FALLOS, reloj_s)
         # Códigos de 6 dígitos equivocados con la sesión abierta: 5 cada 15 minutos por cuenta.
         self._fallos_codigo = LimitadorIntentos(FALLOS_POR_CORREO, VENTANA_FALLOS, reloj_s)
+        # Correos con código: como mucho 5 por hora para una misma cuenta (además de 1 por minuto).
+        self._envios_codigo = LimitadorIntentos(5, 3600, reloj_s)
 
     # ---------- registro ----------
 
-    def registrar(self, datos: DatosRegistro, cliente: Cliente) -> tuple[Usuario, str]:
-        """Crea la cuenta y abre su primera sesión.
-
-        Returns:
-            El usuario y el token de sesión.
+    def registrar(self, datos: DatosRegistro, cliente: Cliente) -> ResultadoRegistro:
+        """Crea la cuenta. Si hay enviador de correo, manda el código y la cuenta espera a que lo
+        confirmen (sin sesión); si no, abre la primera sesión.
 
         Raises:
             DemasiadosIntentosError: si esa IP creó demasiadas cuentas hace poco.
@@ -141,14 +200,89 @@ class ServicioCuentas:
         if espera > 0:
             raise DemasiadosIntentosError(espera)
         self._limite_registro.registrar(clave)
+        exigir = self._correo is not None
         try:
-            usuario = self.usuarios.crear(datos, self._hasher.calcular(datos.contrasena))
+            usuario = self.usuarios.crear(datos, self._hasher.calcular(datos.contrasena), correo_verificado=not exigir)
         except UsuarioDuplicadoError:
             raise RegistroRechazadoError("Ya existe una cuenta con ese correo o con ese documento") from None
         self.actividad.registrar(usuario.id, TipoActividad.REGISTRO, cliente.ip)
+        if exigir:
+            return ResultadoRegistro(usuario, token_verificacion=self._enviar_codigo(usuario))
         token, _ = self.sesiones.crear(usuario.id, cliente.ip, cliente.agente)
         self.actividad.registrar(usuario.id, TipoActividad.INICIO_SESION, cliente.ip, cliente.agente)
-        return usuario, token
+        return ResultadoRegistro(usuario, token_sesion=token)
+
+    # ---------- confirmar el correo ----------
+
+    def _mandar(self, usuario: Usuario) -> str:
+        """Genera un código, lo manda al correo y lo devuelve."""
+        assert self._correo is not None
+        self._envios_codigo.registrar(f"envio:{usuario.id}")
+        codigo = generar_codigo()
+        self._correo.enviar(codigo_verificacion(usuario.correo, usuario.nombre, codigo, DURACION_CODIGO // MINUTO))
+        return codigo
+
+    def _enviar_codigo(self, usuario: Usuario) -> str:
+        """Manda un código nuevo y devuelve el token nuevo de la verificación."""
+        return self.verificaciones.nueva(usuario.id, self._mandar(usuario))
+
+    def _puede_enviar(self, usuario_id: int) -> bool:
+        return (self.verificaciones.espera_reenvio(usuario_id) == 0
+                and self._envios_codigo.espera(f"envio:{usuario_id}") == 0)
+
+    def _token_verificacion(self, usuario: Usuario) -> str:
+        """Al intentar entrar sin haber confirmado: manda un código nuevo, salvo que el último sea
+        de hace menos de un minuto o ya se hayan enviado 5 en la hora (entonces sigue el de antes)."""
+        pendiente = self.verificaciones.de_usuario(usuario.id)
+        if self._correo is not None and (pendiente is None or self._puede_enviar(usuario.id)):
+            return self._enviar_codigo(usuario)
+        if pendiente is None:
+            raise VerificacionVencidaError()
+        return self.verificaciones.nueva(usuario.id, None)
+
+    def verificar_correo(self, token: str, codigo: str, cliente: Cliente) -> tuple[Usuario, str]:
+        """Confirma el correo con el código y abre la sesión.
+
+        Raises:
+            VerificacionVencidaError: si no hay verificación con ese token, o el código venció o
+                agotó sus 5 intentos (hay que pedir otro).
+            CodigoInvalidoError: si el código no es el que se envió (quedan intentos).
+        """
+        usuario_id = self.verificaciones.usuario_del_token(token)
+        if usuario_id is None:
+            raise VerificacionVencidaError()
+        if not self.verificaciones.comprobar(usuario_id, codigo.replace(" ", "")):
+            self.actividad.registrar(usuario_id, TipoActividad.CODIGO_FALLIDO, cliente.ip, "al confirmar el correo")
+            vigente = self.verificaciones.de_usuario(usuario_id)
+            if vigente is None or vigente.intentos >= INTENTOS_CODIGO or vigente.expira_en <= self._reloj_ms():
+                raise VerificacionVencidaError()
+            raise CodigoInvalidoError()
+        self.verificaciones.borrar(usuario_id)
+        self.usuarios.marcar_correo_verificado(usuario_id)
+        self.actividad.registrar(usuario_id, TipoActividad.CORREO_VERIFICADO, cliente.ip)
+        return self._abrir_sesion(usuario_id, cliente)
+
+    def reenviar_codigo(self, token: str) -> str:
+        """Manda otro código al correo de esa verificación (el token sigue sirviendo).
+        Devuelve el correo enmascarado.
+
+        Raises:
+            VerificacionVencidaError: si el token no corresponde a una verificación.
+            EsperaReenvioError: si el último se envió hace menos de un minuto.
+            DemasiadosIntentosError: si ya se enviaron 5 en la última hora.
+        """
+        usuario_id = self.verificaciones.usuario_del_token(token)
+        usuario = None if usuario_id is None else self.usuarios.por_id(usuario_id)
+        if usuario is None or self._correo is None:
+            raise VerificacionVencidaError()
+        espera = self.verificaciones.espera_reenvio(usuario.id)
+        if espera > 0:
+            raise EsperaReenvioError(espera / 1000)
+        limite = self._envios_codigo.espera(f"envio:{usuario.id}")
+        if limite > 0:
+            raise DemasiadosIntentosError(limite)
+        self.verificaciones.reemplazar_codigo(usuario.id, self._mandar(usuario))
+        return correo_enmascarado(usuario.correo)
 
     # ---------- inicio de sesión ----------
 
@@ -191,6 +325,11 @@ class ServicioCuentas:
         self._fallos_correo.reiniciar(clave)
         if self._hasher.necesita_actualizarse(credenciales.contrasena_hash):
             self.usuarios.cambiar_contrasena(credenciales.usuario_id, self._hasher.calcular(contrasena))
+        if not credenciales.correo_verificado:
+            usuario = self.usuarios.por_id(credenciales.usuario_id)
+            assert usuario is not None
+            return ResultadoInicio(token_verificacion=self._token_verificacion(usuario),
+                                   correo=correo_enmascarado(usuario.correo))
         if credenciales.totp_activo:
             return ResultadoInicio(token_desafio=self.sesiones.crear_desafio(credenciales.usuario_id))
         usuario, token = self._abrir_sesion(credenciales.usuario_id, cliente)

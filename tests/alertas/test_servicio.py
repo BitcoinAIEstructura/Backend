@@ -5,7 +5,7 @@ import pytest
 from bitcoinai.alertas.servicio import AlertaInvalidaError, AlertaNoEncontradaError, ServicioAlertas
 from bitcoinai.alertas.tablero import Alerta, EstadoAlerta
 from bitcoinai.basedatos import BaseDatos
-from bitcoinai.basedatos.migraciones import migrar
+from bitcoinai.basedatos.migraciones import MIGRACIONES, migrar
 from bitcoinai.usuarios.servicio import Cliente
 from tests.apoyo.fuente_falsa import FuenteFalsa
 from tests.usuarios.entorno import crear_entorno, datos
@@ -13,8 +13,8 @@ from tests.usuarios.entorno import crear_entorno, datos
 
 def entorno_con_usuarios() -> tuple[BaseDatos, int, int]:
     e = crear_entorno()
-    ana, _ = e.servicio.registrar(datos(), Cliente("1.1.1.1", "x"))
-    beto, _ = e.servicio.registrar(datos("beto@correo.co", "1098765432"), Cliente("1.1.1.1", "x"))
+    ana, _ = e.servicio.registrar(datos(), Cliente("1.1.1.1", "x")).sesion()
+    beto, _ = e.servicio.registrar(datos("beto@correo.co", "1098765432"), Cliente("1.1.1.1", "x")).sesion()
     return e.bd, ana.id, beto.id
 
 
@@ -97,4 +97,4 @@ def test_el_vigilante_revisa_solo_si_hay_alertas() -> None:
 
 
 def test_migraciones_al_dia() -> None:
-    assert migrar(BaseDatos(":memory:")) == 3
+    assert migrar(BaseDatos(":memory:")) == len(MIGRACIONES)

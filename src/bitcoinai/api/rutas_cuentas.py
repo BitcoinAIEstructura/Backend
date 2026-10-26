@@ -22,6 +22,7 @@ from bitcoinai.api.configuracion import Configuracion
 from bitcoinai.usuarios.modelo import DatosRegistro, Usuario
 from bitcoinai.usuarios.servicio import Cliente, ServicioCuentas
 from bitcoinai.usuarios.sesiones import DURACION_DESAFIO, DURACION_SESION, Sesion
+from bitcoinai.usuarios.verificacion import DURACION_CODIGO
 
 LARGO_TEXTO = 200
 
@@ -92,6 +93,9 @@ class Cookies:
         prefijo = "__Host-" if self.segura else ""
         self.sesion = f"{prefijo}sesion"
         self.desafio = f"{prefijo}desafio"
+        # Confirmar el correo: dice a qué cuenta va el código sin poner el correo en la URL.
+        # Dura un día: la persona puede volver más tarde y pedir otro código.
+        self.verificacion = f"{prefijo}verificacion"
 
     def poner(self, respuesta: Response, nombre: str, valor: str, segundos: int) -> None:
         respuesta.set_cookie(nombre, valor, max_age=segundos, path="/", secure=self.segura, httponly=True,
@@ -116,6 +120,11 @@ def sesion_de(peticion: Request, servicio: ServicioCuentas, cookies: Cookies) ->
     return servicio.sesion_actual(peticion.cookies.get(cookies.sesion))
 
 
+DURACION_VERIFICACION = 24 * 60 * 60
+"""Segundos que dura la cookie de la verificación del correo (el código vence antes: 15 min)."""
+assert DURACION_CODIGO // 1000 < DURACION_VERIFICACION
+
+
 def crear_rutas_cuentas(servicio: ServicioCuentas, config: Configuracion) -> APIRouter:
     rutas = APIRouter()
     cookies = Cookies(config)
@@ -123,21 +132,44 @@ def crear_rutas_cuentas(servicio: ServicioCuentas, config: Configuracion) -> API
     def abrir(respuesta: Response, usuario: Usuario, token: str) -> dict[str, Any]:
         cookies.poner(respuesta, cookies.sesion, token, DURACION_SESION // 1000)
         cookies.borrar(respuesta, cookies.desafio)
+        cookies.borrar(respuesta, cookies.verificacion)
         return {"usuario": usuario_a_json(usuario)}
+
+    def pedir_codigo(respuesta: Response, token: str, correo: str) -> dict[str, Any]:
+        cookies.poner(respuesta, cookies.verificacion, token, DURACION_VERIFICACION)
+        return {"verificarCorreo": True, "correo": correo}
 
     @rutas.post("/api/cuentas/registro", status_code=201)
     def registrar(cuerpo: CuerpoRegistro, peticion: Request, respuesta: Response) -> dict[str, Any]:
-        """Crea la cuenta y deja la sesión abierta."""
+        """Crea la cuenta. Si hay que confirmar el correo responde ``{"verificarCorreo": true, "correo"}``
+        (el código llega al correo y se envía a POST /api/cuentas/verificar-correo); si no, deja la
+        sesión abierta y responde ``{"usuario"}``."""
         datos = DatosRegistro.validar(cuerpo.nombre, cuerpo.apellido, cuerpo.correo, cuerpo.tipo_documento,
                                       cuerpo.numero_documento, cuerpo.telefono, cuerpo.contrasena)
-        usuario, token = servicio.registrar(datos, cliente_de(peticion, config))
-        return abrir(respuesta, usuario, token)
+        resultado = servicio.registrar(datos, cliente_de(peticion, config))
+        if resultado.token_verificacion is not None:
+            return pedir_codigo(respuesta, resultado.token_verificacion, resultado.correo)
+        return {"verificarCorreo": False, **abrir(respuesta, *resultado.sesion())}
+
+    @rutas.post("/api/cuentas/verificar-correo")
+    def verificar_correo(cuerpo: CuerpoCodigo, peticion: Request, respuesta: Response) -> dict[str, Any]:
+        """El código de 6 dígitos que llegó al correo: confirma la cuenta y abre la sesión."""
+        token = peticion.cookies.get(cookies.verificacion, "")
+        usuario, sesion = servicio.verificar_correo(token, cuerpo.codigo, cliente_de(peticion, config))
+        return abrir(respuesta, usuario, sesion)
+
+    @rutas.post("/api/cuentas/reenviar-codigo")
+    def reenviar_codigo(peticion: Request) -> dict[str, Any]:
+        """Manda otro código al correo (uno por minuto y 5 por hora)."""
+        return {"correo": servicio.reenviar_codigo(peticion.cookies.get(cookies.verificacion, ""))}
 
     @rutas.post("/api/sesion")
     def iniciar(cuerpo: CuerpoInicio, peticion: Request, respuesta: Response) -> dict[str, Any]:
         """Correo y contraseña. Con verificación en dos pasos responde ``{"segundoPaso": true}``
         y hay que enviar el código a POST /api/sesion/codigo."""
         resultado = servicio.iniciar_sesion(cuerpo.correo, cuerpo.contrasena, cliente_de(peticion, config))
+        if resultado.token_verificacion is not None and resultado.correo is not None:
+            return {"segundoPaso": False, **pedir_codigo(respuesta, resultado.token_verificacion, resultado.correo)}
         if resultado.token_desafio is not None:
             cookies.poner(respuesta, cookies.desafio, resultado.token_desafio, DURACION_DESAFIO // 1000)
             return {"segundoPaso": True}

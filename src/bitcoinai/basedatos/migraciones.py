@@ -146,6 +146,20 @@ MIGRACIONES: tuple[Migracion, ...] = (
         "CREATE INDEX alertas_usuario ON alertas(usuario_id, creada_en)",
         "CREATE INDEX alertas_activas ON alertas(estado)",
     )),
+    Migracion(4, "confirmar el correo con un código al crear la cuenta", (
+        # Las cuentas que ya existían quedan confirmadas (DEFAULT 1); las nuevas se crean con 0.
+        "ALTER TABLE usuarios ADD COLUMN correo_verificado INTEGER NOT NULL DEFAULT 1",
+        # Una verificación pendiente por cuenta. Como en las sesiones, solo se guardan hashes:
+        # el del token (que va en una cookie) y el del código de 6 dígitos (que va al correo).
+        """CREATE TABLE verificaciones_correo (
+            usuario_id INTEGER PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+            token_hash BLOB NOT NULL UNIQUE,
+            codigo_hash BLOB NOT NULL,
+            expira_en INTEGER NOT NULL,
+            intentos INTEGER NOT NULL DEFAULT 0,
+            enviado_en INTEGER NOT NULL
+        )""",
+    )),
 )
 
 

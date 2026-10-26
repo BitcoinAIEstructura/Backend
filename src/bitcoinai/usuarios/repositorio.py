@@ -46,8 +46,8 @@ class RepositorioUsuarios:
 
     # ---------- crear y leer ----------
 
-    def crear(self, datos: DatosRegistro, contrasena_hash: str) -> Usuario:
-        """Guarda una cuenta nueva.
+    def crear(self, datos: DatosRegistro, contrasena_hash: str, correo_verificado: bool = True) -> Usuario:
+        """Guarda una cuenta nueva (con ``correo_verificado=False`` no puede entrar hasta confirmar el correo).
 
         Raises:
             UsuarioDuplicadoError: si el correo o el documento ya están registrados.
@@ -57,12 +57,12 @@ class RepositorioUsuarios:
         try:
             nuevo_id = self._bd.ejecutar(
                 "INSERT INTO usuarios (nombre, apellido, correo_indice, correo_cifrado, tipo_documento,"
-                " documento_indice, documento_cifrado, telefono_cifrado, contrasena_hash, creado_en, actualizado_en)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " documento_indice, documento_cifrado, telefono_cifrado, contrasena_hash, creado_en, actualizado_en,"
+                " correo_verificado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (datos.nombre, datos.apellido, self._indice_correo(datos.correo), c.cifrar(datos.correo, CORREO),
                  datos.tipo_documento.name, self._indice_documento(datos.tipo_documento, datos.numero_documento),
                  c.cifrar(datos.numero_documento, DOCUMENTO), c.cifrar(datos.telefono, TELEFONO), contrasena_hash,
-                 ahora, ahora))
+                 ahora, ahora, int(correo_verificado)))
         except sqlite3.IntegrityError as error:
             raise UsuarioDuplicadoError("Ya existe una cuenta con ese correo o documento") from error
         usuario = self.por_id(nuevo_id)
@@ -99,9 +99,13 @@ class RepositorioUsuarios:
         secreto = fila["totp_secreto_cifrado"]
         return Credenciales(fila["id"], fila["contrasena_hash"],
                             None if secreto is None else self._cifrador.descifrar(secreto, TOTP),
-                            bool(fila["totp_activo"]), fila["totp_ultimo_paso"])
+                            bool(fila["totp_activo"]), fila["totp_ultimo_paso"], bool(fila["correo_verificado"]))
 
     # ---------- cambios ----------
+
+    def marcar_correo_verificado(self, usuario_id: int) -> None:
+        self._bd.ejecutar("UPDATE usuarios SET correo_verificado = 1, actualizado_en = ? WHERE id = ?",
+                          (self._reloj(), usuario_id))
 
     def cambiar_contrasena(self, usuario_id: int, contrasena_hash: str) -> None:
         self._bd.ejecutar("UPDATE usuarios SET contrasena_hash = ?, actualizado_en = ? WHERE id = ?",

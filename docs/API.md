@@ -730,7 +730,8 @@ Registro con documento, inicio de sesión con correo y contraseña, verificació
 | 400 | Dato inválido. Incluye `campo` para marcar la casilla del formulario: `{"error":"Un celular colombiano tiene 10 dígitos y empieza por 3","campo":"telefono"}` |
 | 401 | Correo o contraseña incorrectos (nunca se dice cuál de los dos), código incorrecto, o no hay sesión |
 | 409 | El correo o el documento ya tienen cuenta, o la operación no aplica (por ejemplo, activar dos veces la verificación) |
-| 429 | Demasiados intentos. Incluye `Retry-After` con los segundos de espera |
+| 410 | El código del correo venció, agotó sus 5 intentos o no hay verificación pendiente: hay que pedir otro |
+| 429 | Demasiados intentos, o se pidió otro código del correo antes de un minuto. Incluye `Retry-After` con los segundos de espera |
 
 Las respuestas de `/api/cuentas/*` y `/api/sesion*` llevan `Cache-Control: no-store`.
 
@@ -752,12 +753,30 @@ Las respuestas de `/api/cuentas/*` y `/api/sesion*` llevan `Cache-Control: no-st
 - **Campos desconocidos:** se rechazan con 400.
 - **Límite:** 10 registros por hora desde una misma IP.
 
-Responde `201` y deja la sesión abierta (`Set-Cookie`). El documento y el teléfono vuelven enmascarados:
+Responde `201` **sin abrir sesión**: primero hay que confirmar el correo. Al correo llega un código de 6 dígitos (vence en 15 minutos) y la respuesta pone la cookie `verificacion` (HttpOnly, 24 horas), que dice a qué cuenta corresponde el código sin poner el correo en la URL:
 
 ```json
-{"usuario":{"id":1,"nombre":"Ana","apellido":"Pérez","correo":"ana@correo.co","tipoDocumento":"CC",
- "documento":"******6789","telefono":"+57******4567","verificacionDosPasos":false,"creadoEn":1791604997952}}
+{"verificarCorreo":true,"correo":"a***@correo.co"}
 ```
+
+Si el servidor se arma sin enviador de correo (solo en algunas pruebas), la cuenta queda confirmada y la respuesta es `{"verificarCorreo":false,"usuario":{…}}` con la sesión abierta.
+
+### `POST /api/cuentas/verificar-correo`
+
+Cuerpo `{"codigo":"042137"}`, con la cookie `verificacion`. Si es correcto, confirma el correo, abre la sesión (`Set-Cookie`, borra la cookie `verificacion`) y responde como un inicio de sesión: `{"usuario":{…}}`. El documento y el teléfono vuelven enmascarados.
+
+- Código equivocado → `401` (quedan intentos).
+- Al quinto fallo, vencido (15 minutos) o sin la cookie → `410`: hay que pedir otro.
+
+### `POST /api/cuentas/reenviar-codigo`
+
+Con la cookie `verificacion`, manda un código nuevo (el anterior deja de servir) y responde `{"correo":"a***@correo.co"}`. Uno por minuto (`429` con `Retry-After`) y como mucho 5 por hora para una cuenta.
+
+### Correos
+
+- **Con SMTP** (`SMTP_USUARIO` y `SMTP_CONTRASENA`): se envían por Gmail u otro servidor, en un hilo aparte para no demorar la respuesta. Para Gmail, `SMTP_CONTRASENA` es una *contraseña de aplicación*: se crea en la cuenta de Google, en Seguridad → Verificación en dos pasos → Contraseñas de aplicaciones. Opcionales: `SMTP_HOST` (smtp.gmail.com), `SMTP_PUERTO` (587, o 465 para TLS directo) y `CORREO_REMITENTE`.
+- **Sin SMTP:** cada correo se guarda como archivo `.eml` en `<DATA_DIR>/correos`, para probar sin configurar nada.
+- **El servidor lee un archivo `.env`** al arrancar (sin pisar lo que ya esté en el entorno), así la contraseña de aplicación no se escribe en cada terminal. `.env` no se sube a git.
 
 ### `POST /api/sesion`
 

@@ -89,3 +89,4 @@ class Credenciales:
     totp_secreto: str | None
     totp_activo: bool
     totp_ultimo_paso: int | None
+    correo_verificado: bool = True

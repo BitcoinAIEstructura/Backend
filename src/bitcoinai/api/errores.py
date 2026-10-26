@@ -19,9 +19,11 @@ from bitcoinai.usuarios.servicio import (
     CuentaError,
     DemasiadosIntentosError,
     DesafioVencidoError,
+    EsperaReenvioError,
     OperacionCuentaError,
     RegistroRechazadoError,
     SesionInvalidaError,
+    VerificacionVencidaError,
 )
 from bitcoinai.usuarios.validacion import DatoInvalidoError
 
@@ -32,6 +34,7 @@ CODIGOS_CUENTA: tuple[tuple[type[CuentaError], int], ...] = (
     (CodigoInvalidoError, 401),
     (DesafioVencidoError, 401),
     (SesionInvalidaError, 401),
+    (VerificacionVencidaError, 410),
 )
 """Código HTTP de cada error de las cuentas (los demás, 400)."""
 
@@ -100,6 +103,10 @@ def registrar_manejadores(app: FastAPI) -> None:
 
     @app.exception_handler(DemasiadosIntentosError)
     async def demasiados_intentos(peticion: Request, error: DemasiadosIntentosError) -> Response:
+        return respuesta_error(429, error.mensaje, {"Retry-After": str(max(1, math.ceil(error.espera)))})
+
+    @app.exception_handler(EsperaReenvioError)
+    async def espera_reenvio(peticion: Request, error: EsperaReenvioError) -> Response:
         return respuesta_error(429, error.mensaje, {"Retry-After": str(max(1, math.ceil(error.espera)))})
 
     @app.exception_handler(CuentaError)
