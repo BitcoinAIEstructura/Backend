@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from bitcoinai.api import Configuracion, crear_app
 from bitcoinai.api.rutas_ia import _nodo
 from bitcoinai.ia.arbol import ArbolDecision
+from bitcoinai.ia.caracteristicas import NOMBRES
 from tests.apoyo.fuente_falsa import FuenteFalsa
 from tests.ia.apoyo import separables, vector
 
@@ -29,6 +30,15 @@ def test_predicciones_con_metricas_y_explicaciones(cliente: TestClient) -> None:
     assert len(p["prueba"]) == 90
     assert p["arbol"]["enCamino"] is True
     assert "No es asesoría financiera" in p["aviso"]
+    # Los textos de la página salen de aquí: el frontend solo los muestra.
+    assert p["nombreIntervalo"] == "1 día" and p["intervalos"][0] == {"codigo": "15m", "nombre": "15 min"}
+    assert p["encabezado"]["etiqueta"] == "Hecho a mano"
+    arbol = p["modelos"][1]
+    assert arbol["descripcion"]["factoresConSigno"] is False and "sí/no" in arbol["descripcion"]["idea"]
+    veredicto = comite["veredicto"]
+    assert veredicto["gana"] == (comite["metricas"]["ventaja"] > 0)
+    assert str(comite["metricas"]["muestras"]) in veredicto["texto"]
+    assert p["fuentesExternas"] == {"usadas": [], "omitidas": [], "comparacion": None}
 
 
 def test_la_segunda_peticion_sale_de_la_cache(cliente: TestClient) -> None:
@@ -45,6 +55,6 @@ def test_intervalo_invalido(cliente: TestClient) -> None:
 def test_el_arbol_marca_el_camino_de_la_vela_de_ahora() -> None:
     arbol = ArbolDecision()
     arbol.entrenar(separables())
-    forma = _nodo(arbol.raiz, vector(20), True)
+    forma = _nodo(arbol.raiz, vector(20), NOMBRES, True)
     assert forma is not None and forma["caracteristica"] == "RSI 14"
     assert forma["si"]["enCamino"] is True and forma["no"]["enCamino"] is False

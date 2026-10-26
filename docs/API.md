@@ -359,9 +359,9 @@ Resultados reales con 999 velas diarias de BTCUSDT, capital 1000 y comisión 0,1
 
 En todo el periodo, ninguna estrategia superó a comprar y mantener.
 
-## Inteligencia artificial: `GET /api/ia/predicciones`
+## Inteligencia artificial: `GET /api/ia/predicciones` y `GET /api/ia/fuentes`
 
-Tres modelos hechos a mano y un comité dicen si la próxima vela cerrará más arriba. Es pública. Ver [docs/IA.md](IA.md).
+Tres modelos hechos a mano y un comité dicen si la próxima vela cerrará más arriba. Aprenden del precio y de tres fuentes externas públicas (miedo y codicia, futuros de Binance y el DVOL de Deribit). Las dos rutas son públicas. Ver [docs/IA.md](IA.md).
 
 | Parámetro | Valores | Por defecto |
 | --- | --- | --- |
@@ -381,12 +381,15 @@ Tres modelos hechos a mano y un comité dicen si la próxima vela cerrará más 
   - Comité: cuánto empuja cada miembro.
 - **`arbol`:** el árbol entrenado, con `enCamino` en las ramas por las que pasó la vela de ahora.
 - **`prueba`:** lo que dijo el comité en cada vela de prueba y si subió.
+- **`caracteristicas`:** las 10 del precio y, al final, las de las fuentes externas que entraron (hasta 6).
+- **`fuentesExternas`:** `usadas` y `omitidas` (con `motivo`: no respondió o su historial no cubre todas las velas). `comparacion` mide la regresión logística con y sin ellas en las mismas velas de prueba (`sinExternos`, `conExternos` y una `conclusion` en palabras); es `null` si no entró ninguna.
+- **Textos para mostrar** (el frontend no escribe los suyos): `nombreIntervalo`, `intervalos` (`[{codigo, nombre}]`), `encabezado` (`{etiqueta, texto}`) y, en cada modelo y en el comité, `descripcion` (`{idea, tituloFactores, factoresConSigno}`) y `veredicto` (`{gana, titulo, texto}`: si le ganó a la base, dicho con honestidad).
 
 ```json
 {"simbolo":"BTCUSDT","intervalo":"1h","tiempoVela":1791820800000,"entrenadoEn":1791824400000,
  "muestrasEntrenamiento":759,"muestrasPrueba":190,
  "comite":{"nombre":"Comité","probabilidad":0.53,"direccion":"SUBE","confianza":0.06,"peso":null,
-   "explicacion":{"resumen":"2 de 3 modelos creen que sube; el que más pesa es k vecinos.","factores":[…],"pasos":[…]},
+   "explicacion":{"resumen":"2 de 3 modelos creen que sube; el que más empuja es k vecinos, hacia subir.","factores":[…],"pasos":[…]},
    "metricas":{"muestras":190,"exactitud":0.53,"base":0.51,"ventaja":0.02,"precisionSube":0.54,"vecesDijoSube":120}},
  "modelos":[{"nombre":"Regresión logística",…,"peso":0.31},{"nombre":"Árbol de decisión",…},{"nombre":"k vecinos",…}],
  "caracteristicas":[{"nombre":"Rendimiento de la última vela","valor":-0.0012},…],
@@ -395,7 +398,24 @@ Tres modelos hechos a mano y un comité dicen si la próxima vela cerrará más 
  "aviso":"Predicción hecha con datos reales del pasado. … No es asesoría financiera."}
 ```
 
-Responde `400` si el intervalo no está permitido, `502` si Binance no responde y `503` si no hay velas suficientes (hacen falta al menos 200 muestras).
+Responde `400` si el intervalo no está permitido, `502` si Binance no responde y `503` si no hay velas suficientes (hacen falta al menos 200 muestras). Si una fuente externa no responde, se entrena sin ella (no es un error).
+
+### `GET /api/ia/fuentes?intervalo=1h`
+
+Lo que dicen ahora las fuentes externas, explicado para quien empieza (caché de 10 minutos):
+
+```json
+{"lecturas":[
+  {"id":"miedo-codicia","nombre":"Miedo y codicia","fuente":"alternative.me","valor":50,
+   "valorTexto":"50 de 100 · neutral","explicacion":"Mide el ánimo de la gente con Bitcoin. … Hoy está neutral."},
+  {"id":"financiacion","nombre":"Financiación de futuros","fuente":"Binance (futuros)","valor":0.0001,"valorTexto":"0,0100 %",…},
+  {"id":"largos","nombre":"Cuentas que apuestan a que sube","valor":0.69,"valorTexto":"69 %",…},
+  {"id":"dvol","nombre":"Movimiento esperado","fuente":"Deribit (opciones)","valor":38,
+   "valorTexto":"±0,41 % por vela","explicacion":"… se movería unos ±0,41 % (unos ±329 USDT) … Dice cuánto se mueve, no hacia dónde."}],
+ "errores":[],"actualizadoEn":1793048400000}
+```
+
+Las fuentes que no respondieron van en `errores` (`[{id, motivo}]`) y las demás salen igual. El movimiento esperado depende del `intervalo`: DVOL ÷ 100 × √(segundos de la vela ÷ segundos del año).
 
 ## Simulación de operaciones (paper trading)
 

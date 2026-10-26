@@ -18,6 +18,7 @@ from bitcoinai.api.publicador import Publicador, PublicadorDeUsuario
 from bitcoinai.api.rutas_alertas import alerta_a_json
 from bitcoinai.basedatos import BaseDatos
 from bitcoinai.basedatos.migraciones import migrar
+from bitcoinai.externos import DatosExternos
 from bitcoinai.mercado import CacheMercado, ClienteBinance
 from bitcoinai.notificaciones import EnviadorCorreo, enviador_desde_entorno
 from bitcoinai.persistencia import AlmacenBaseDatos, participantes_activos
@@ -94,7 +95,8 @@ def construir(config: Configuracion, hasher: HashContrasenas | None = None) -> F
     alertas = ServicioAlertas(bd, fuente, config.simbolo,
                               al_disparar=lambda a: publicador.publicar_a(a.usuario_id, "alerta", alerta_a_json(a)))
     return crear_app(config, fuente, publicador=publicador, cuentas=construir_cuentas(config, bd, hasher),
-                     gestor=gestor, participantes=lambda precio: participantes_activos(bd, precio), alertas=alertas)
+                     gestor=gestor, participantes=lambda precio: participantes_activos(bd, precio), alertas=alertas,
+                     externos=DatosExternos())
 
 
 def main() -> None:
