@@ -6,6 +6,8 @@ Ctrl+C lo apaga limpiamente.
 """
 
 import logging
+import os
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
@@ -17,6 +19,7 @@ from bitcoinai.api.rutas_alertas import alerta_a_json
 from bitcoinai.basedatos import BaseDatos
 from bitcoinai.basedatos.migraciones import migrar
 from bitcoinai.mercado import CacheMercado, ClienteBinance
+from bitcoinai.notificaciones import EnviadorCorreo, enviador_desde_entorno
 from bitcoinai.persistencia import AlmacenBaseDatos, participantes_activos
 from bitcoinai.seguridad.cifrado import Cifrador
 from bitcoinai.seguridad.claves import cargar_clave
@@ -36,9 +39,39 @@ def abrir_base_datos(config: Configuracion) -> BaseDatos:
     return bd
 
 
-def construir_cuentas(config: Configuracion, bd: BaseDatos, hasher: HashContrasenas | None = None) -> ServicioCuentas:
-    """Servicio de cuentas con la clave de cifrado; limpia las sesiones vencidas."""
-    cuentas = ServicioCuentas(bd, Cifrador(cargar_clave(config.data_dir)), hasher or HashContrasenas())
+def cargar_env(archivo: str = ".env") -> int:
+    """Lee ``NOMBRE=valor`` de un archivo .env (si existe) sin pisar lo que ya esté en el entorno.
+
+    Así la contraseña de aplicación de Gmail puede quedar en ``.env`` (que no se sube a git)
+    en vez de escribirse en cada terminal. Devuelve cuántas variables cargó.
+    """
+    ruta = Path(archivo)
+    if not ruta.is_file():
+        return 0
+    cargadas = 0
+    for linea in ruta.read_text(encoding="utf-8").splitlines():
+        linea = linea.strip()
+        if not linea or linea.startswith("#") or "=" not in linea:
+            continue
+        nombre, _, valor = linea.partition("=")
+        nombre, valor = nombre.strip(), valor.strip().strip('"').strip("'")
+        if nombre and nombre not in os.environ:
+            os.environ[nombre] = valor
+            cargadas += 1
+    return cargadas
+
+
+def construir_cuentas(config: Configuracion, bd: BaseDatos, hasher: HashContrasenas | None = None,
+                      correo: EnviadorCorreo | None = None) -> ServicioCuentas:
+    """Servicio de cuentas con la clave de cifrado y el envío de correos; limpia las sesiones vencidas.
+
+    Las cuentas nuevas siempre confirman su correo: por SMTP si está configurado (``SMTP_USUARIO``
+    y ``SMTP_CONTRASENA``) o, sin eso, guardando los correos en ``<DATA_DIR>/correos``.
+    """
+    enviador = correo or enviador_desde_entorno(config.data_dir)
+    LOG.info("Correos: %s", enviador.descripcion())
+    cuentas = ServicioCuentas(bd, Cifrador(cargar_clave(config.data_dir)), hasher or HashContrasenas(),
+                              correo=enviador)
     cuentas.sesiones.limpiar_vencidos()
     return cuentas
 
@@ -70,6 +103,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         datefmt="%Y-%m-%d %H:%M:%S")
     logging.getLogger("httpx").setLevel(logging.WARNING)  # sin una línea por cada petición a Binance
+    if cargadas := cargar_env():
+        LOG.info("Variables leídas de .env: %d", cargadas)
     config = Configuracion.desde_entorno()
     app = construir(config)
     print(f"Backend iniciado en http://0.0.0.0:{config.puerto} "
