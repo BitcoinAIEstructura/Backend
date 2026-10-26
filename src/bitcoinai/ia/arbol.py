@@ -51,11 +51,13 @@ class ArbolDecision:
 
     nombre = "Árbol de decisión"
 
-    def __init__(self, profundidad_maxima: int = 4, minimo_hoja: int = 20) -> None:
+    def __init__(self, profundidad_maxima: int = 4, minimo_hoja: int = 20,
+                 nombres: tuple[str, ...] = NOMBRES) -> None:
+        self.nombres = nombres
         self.profundidad_maxima = profundidad_maxima
         self.minimo_hoja = minimo_hoja
         self.raiz: NodoDecision | None = None
-        self.importancia: Vector = (0.0,) * len(NOMBRES)
+        self.importancia: Vector = (0.0,) * len(nombres)
 
     def entrenar(self, muestras: Lista[Muestra]) -> None:
         if muestras.esta_vacia():
@@ -120,7 +122,7 @@ class ArbolDecision:
             assert nodo.caracteristica is not None and nodo.si is not None and nodo.no is not None
             valor = x[nodo.caracteristica]
             va_si = valor <= nodo.umbral
-            pasos += (f"¿{NOMBRES[nodo.caracteristica]} ≤ {nodo.umbral:.4g}? Es {valor:.4g}: "
+            pasos += (f"¿{self.nombres[nodo.caracteristica]} ≤ {nodo.umbral:.4g}? Es {valor:.4g}: "
                       f"{'sí' if va_si else 'no'}.",)
             nodo = nodo.si if va_si else nodo.no
         return nodo, pasos
@@ -131,7 +133,8 @@ class ArbolDecision:
     def explicar(self, x: Vector) -> Explicacion:
         hoja, pasos = self._hoja(x)
         total = sum(self.importancia) or 1.0
-        factores = por_peso((nombre, v / total) for nombre, v in zip(NOMBRES, self.importancia, strict=True) if v > 0)
+        factores = por_peso((nombre, v / total)
+                            for nombre, v in zip(self.nombres, self.importancia, strict=True) if v > 0)
         final = (f"Llegó a una hoja con {hoja.muestras} velas del entrenamiento: después de ellas "
                  f"subió el {porcentaje(hoja.probabilidad)} de las veces.")
         return Explicacion(resumen=final, factores=factores, pasos=(*pasos, final))

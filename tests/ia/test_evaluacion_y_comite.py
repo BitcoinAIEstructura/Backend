@@ -75,3 +75,18 @@ def test_si_nadie_supera_la_base_pesan_igual() -> None:
 def test_comite_sin_entrenar() -> None:
     with pytest.raises(ValueError, match="no está entrenado"):
         Comite((lambda: Fijo(0.5),)).probabilidad(vector(1))
+
+
+def test_textos_del_veredicto_y_la_conclusion() -> None:
+    from bitcoinai.ia.evaluacion import Metricas
+    from bitcoinai.ia.textos import conclusion_externos, nombre_intervalo, veredicto
+
+    gana = Metricas(muestras=200, exactitud=0.55, base=0.52, precision_sube=0.6, veces_dijo_sube=100)
+    pierde = Metricas(muestras=200, exactitud=0.5, base=0.52, precision_sube=0.5, veces_dijo_sube=90)
+    v = veredicto(gana)
+    assert v.gana and "55,0 %" in v.texto and "+3,0 puntos" in v.texto
+    assert not veredicto(pierde).gana and "experimento" in veredicto(pierde).texto
+    assert "acertó más" in conclusion_externos(pierde, gana)
+    assert "acertó menos" in conclusion_externos(gana, pierde) and "ruido" in conclusion_externos(gana, pierde)
+    assert "casi lo mismo" in conclusion_externos(gana, gana)
+    assert nombre_intervalo("4h") == "4 h" and nombre_intervalo("2h") == "2h"

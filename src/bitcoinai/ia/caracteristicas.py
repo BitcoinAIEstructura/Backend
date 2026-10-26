@@ -6,11 +6,15 @@ Las velas se copian a ``Arreglo`` para leer "hace 5 velas" en O(1).
 """
 
 import math
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from bitcoinai.estructuras import Arreglo, Lista
+from bitcoinai.externos import SeriesExternas, SerieTemporal
 from bitcoinai.modelo import Vela
+
+HORA_MS = 3_600_000
+DIA_MS = 24 * HORA_MS
 
 NOMBRES: tuple[str, ...] = (
     "Rendimiento de la última vela",
@@ -25,6 +29,56 @@ NOMBRES: tuple[str, ...] = (
     "Rango de la vela",
 )
 """Nombre de cada característica, en el orden del vector."""
+
+@dataclass(frozen=True, slots=True)
+class FuenteCaracteristicas:
+    """Una fuente externa y las características que aporta."""
+
+    id: str
+    nombre: str
+    caracteristicas: tuple[str, ...]
+
+
+FUENTES_EXTERNAS: tuple[FuenteCaracteristicas, ...] = (
+    FuenteCaracteristicas("miedo-codicia", "Índice de miedo y codicia",
+                          ("Miedo y codicia", "Cambio del miedo y codicia en 7 días")),
+    FuenteCaracteristicas("financiacion", "Financiación de futuros (Binance)",
+                          ("Financiación de futuros", "Financiación promedio de 24 h")),
+    FuenteCaracteristicas("dvol", "Volatilidad esperada (Deribit)",
+                          ("Volatilidad esperada (DVOL)", "Cambio del DVOL en 24 h")),
+)
+
+
+def _miedo_codicia(serie: SerieTemporal, t: int) -> tuple[float, ...] | None:
+    ahora, antes = serie.valor_en(t), serie.valor_en(t - 7 * DIA_MS)
+    return None if ahora is None or antes is None else (ahora / 100, (ahora - antes) / 100)
+
+
+def _financiacion(serie: SerieTemporal, t: int) -> tuple[float, ...] | None:
+    # En "por mil" para que no sean números diminutos (0,0001 → 0,1).
+    valores = tuple(serie.valor_en(t - k * 8 * HORA_MS) for k in range(3))
+    if any(v is None for v in valores):
+        return None
+    tasas = tuple(v for v in valores if v is not None)
+    return tasas[0] * 1000, sum(tasas) / 3 * 1000
+
+
+def _dvol(serie: SerieTemporal, t: int) -> tuple[float, ...] | None:
+    ahora, antes = serie.valor_en(t), serie.valor_en(t - DIA_MS)
+    return None if ahora is None or antes is None else (ahora / 100, (ahora - antes) / 100)
+
+
+_LEER: dict[str, Callable[[SerieTemporal, int], tuple[float, ...] | None]] = {
+    "miedo-codicia": _miedo_codicia,
+    "financiacion": _financiacion,
+    "dvol": _dvol,
+}
+
+
+def _serie_de(externos: SeriesExternas, fuente: str) -> SerieTemporal | None:
+    return {"miedo-codicia": externos.miedo_codicia, "financiacion": externos.financiacion,
+            "dvol": externos.dvol}[fuente]
+
 
 CALENTAMIENTO = 50
 """Velas necesarias antes de la primera muestra (la SMA 50 necesita 50)."""
@@ -128,6 +182,85 @@ class _Series:
             vela.volumen / volumen_medio - 1 if volumen_medio > 0 else 0.0,
             (vela.maximo - vela.minimo) / c(i),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class Conjunto:
+    """Las muestras para aprender y lo necesario para predecir la vela de ahora.
+
+    ``nombres`` dice qué es cada posición del vector (las 10 del precio y, al final, las
+    de las fuentes externas que se pudieron usar). ``fuentes_usadas`` y ``fuentes_omitidas``
+    explican cuáles entraron: una fuente entra solo si tiene dato para **todas** las velas
+    (rellenar huecos inventaría información).
+    """
+
+    muestras: Lista[Muestra]
+    ultima: tuple[float, ...] | None
+    tiempo_ultima: int | None
+    nombres: tuple[str, ...]
+    fuentes_usadas: tuple[str, ...]
+    fuentes_omitidas: dict[str, str]
+
+
+def construir_conjunto(velas: Iterable[Vela], externos: SeriesExternas | None = None) -> Conjunto:
+    """Como ``construir_muestras``, sumando las características de las fuentes externas.
+
+    Cada dato externo se toma en el **cierre** de la vela con el último valor ya conocido
+    (``SerieTemporal.valor_en``): nunca se usa algo que en ese momento no se sabía.
+    """
+    copia: Lista[Vela] = Lista()
+    for v in velas:
+        copia.agregar(v)
+    base, ultima, tiempo_ultima = construir_muestras(copia)
+    s = _Series(copia)
+    nombres = NOMBRES
+    usadas: tuple[str, ...] = ()
+    omitidas: dict[str, str] = {} if externos is None else dict(externos.errores)
+    if externos is None or ultima is None:
+        return Conjunto(base, ultima, tiempo_ultima, nombres, usadas, omitidas)
+    # Cierre de cada vela que entra (las muestras y la última).
+    cierres: Lista[int] = Lista()
+    for i in range(CALENTAMIENTO, s.n):
+        vela = s.velas.obtener(i)
+        assert vela is not None
+        cierres.agregar(vela.tiempo_cierre)
+    # Cada columna en un Arreglo: leer la posición i es O(1) (en una Lista sería O(i)).
+    columnas: Lista[Arreglo[tuple[float, ...]]] = Lista()
+    for fuente in FUENTES_EXTERNAS:
+        serie = _serie_de(externos, fuente.id)
+        if serie is None:
+            omitidas.setdefault(fuente.id, "No respondió")
+            continue
+        leer = _LEER[fuente.id]
+        columna: Arreglo[tuple[float, ...]] = Arreglo(cierres.tamanio())
+        completa = True
+        for posicion, t in enumerate(cierres):
+            valores = leer(serie, t)
+            if valores is None:
+                completa = False
+                break
+            columna.poner(posicion, valores)
+        if not completa:
+            omitidas[fuente.id] = "Su historial no alcanza a cubrir todas las velas"
+            continue
+        columnas.agregar(columna)
+        nombres += fuente.caracteristicas
+        usadas += (fuente.id,)
+    if columnas.esta_vacia():
+        return Conjunto(base, ultima, tiempo_ultima, nombres, usadas, omitidas)
+
+    def extra(posicion: int) -> tuple[float, ...]:
+        valores: tuple[float, ...] = ()
+        for columna in columnas:
+            valor = columna.obtener(posicion)
+            assert valor is not None
+            valores += valor
+        return valores
+
+    muestras: Lista[Muestra] = Lista()
+    for posicion, m in enumerate(base):
+        muestras.agregar(Muestra(m.tiempo, m.caracteristicas + extra(posicion), m.etiqueta))
+    return Conjunto(muestras, ultima + extra(cierres.tamanio() - 1), tiempo_ultima, nombres, usadas, omitidas)
 
 
 def construir_muestras(velas: Iterable[Vela]) -> tuple[Lista[Muestra], tuple[float, ...] | None, int | None]:

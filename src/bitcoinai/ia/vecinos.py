@@ -26,8 +26,9 @@ class KVecinos:
 
     nombre = "k vecinos"
 
-    def __init__(self, k: int = 15) -> None:
+    def __init__(self, k: int = 15, nombres: tuple[str, ...] = NOMBRES) -> None:
         self.k = k
+        self.nombres = nombres
         self.escalador = Escalador()
         self.pasado: Lista[tuple[Vector, int, int]] = Lista()  # (x escalado, etiqueta, tiempo)
 
@@ -75,7 +76,7 @@ class KVecinos:
             for d, e, t in (elegidos.obtener(i) for i in range(min(3, elegidos.tamanio())))
         )
         # Lo que más distingue a esta vela: cuántas desviaciones se aleja del promedio en cada cosa.
-        factores = por_peso(zip(NOMBRES, self.escalador.transformar(x), strict=True))
+        factores = por_peso(zip(self.nombres, self.escalador.transformar(x), strict=True))
         resumen = (f"De las {elegidos.tamanio()} velas del pasado más parecidas a esta, "
                    f"{subieron} subieron después.")
         return Explicacion(resumen=resumen, factores=factores, pasos=(resumen, *pasos))

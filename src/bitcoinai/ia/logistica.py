@@ -18,8 +18,10 @@ class RegresionLogistica:
 
     nombre = "Regresión logística"
 
-    def __init__(self, tasa: float = 0.1, epocas: int = 300, l2: float = 0.01) -> None:
+    def __init__(self, tasa: float = 0.1, epocas: int = 300, l2: float = 0.01,
+                 nombres: tuple[str, ...] = NOMBRES) -> None:
         self.tasa, self.epocas, self.l2 = tasa, epocas, l2
+        self.nombres = nombres
         self.escalador = Escalador()
         self.pesos: Vector = ()
         self.sesgo = 0.0
@@ -30,7 +32,7 @@ class RegresionLogistica:
         for m in muestras:
             datos.agregar((self.escalador.transformar(m.caracteristicas), m.etiqueta))
         n = datos.tamanio()
-        d = len(NOMBRES) if not n else len(datos.obtener(0)[0])
+        d = len(self.nombres) if not n else len(datos.obtener(0)[0])
         pesos: Vector = (0.0,) * d
         sesgo = 0.0
         for _ in range(self.epocas):
@@ -52,7 +54,7 @@ class RegresionLogistica:
         return sigmoide(self.sesgo + sum(self._aportes(x)))
 
     def explicar(self, x: Vector) -> Explicacion:
-        factores = por_peso(zip(NOMBRES, self._aportes(x), strict=True))
+        factores = por_peso(zip(self.nombres, self._aportes(x), strict=True))
         principal, peso = factores[0]
         pasos = tuple(f"{nombre}: empuja a {'subir' if p > 0 else 'bajar'} ({p:+.2f})" for nombre, p in factores[:4])
         return Explicacion(

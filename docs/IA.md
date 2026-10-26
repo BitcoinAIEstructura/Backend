@@ -22,6 +22,23 @@ Tres modelos clásicos de aprendizaje supervisado, programados a mano en `bitcoi
 | Volumen relativo | Volumen de la vela frente a su promedio de 20 |
 | Rango de la vela | (máximo − mínimo) ÷ cierre |
 
+### Fuentes externas (`bitcoinai.externos`)
+
+Además del precio, los modelos aprenden de tres fuentes públicas (sin cuentas ni claves; solo se leen datos):
+
+| Fuente | Características | Qué es |
+| --- | --- | --- |
+| Índice de miedo y codicia (alternative.me) | Valor de 0 a 100 y su cambio en 7 días | El ánimo del mercado, un valor por día desde 2018 |
+| Futuros de Binance (fapi.binance.com) | Última tasa de financiación y su promedio de 24 h (en ‰) | Quién le paga a quién cada 8 horas: si es positiva, hay más apuestas a que sube |
+| Opciones de Deribit | DVOL y su cambio en 24 h | La volatilidad anual que esperan las opciones para los próximos 30 días |
+
+- **Sin mirar el futuro:** cada dato se guarda con el momento en que **ya se conocía** (el DVOL de una hora, al terminar esa hora; la financiación, al pagarse) en una `SerieTemporal`, que es un `ArbolAVL`. Para cada vela se toma el `piso` en su cierre: el último valor conocido entonces, en O(log n).
+- **Sin inventar datos:** una fuente entra solo si tiene valor para todas las velas. Si su historial es más corto o no responde, se entrena sin ella y la página lo dice.
+- **¿Ayudan de verdad?** La misma regresión logística se entrena dos veces, solo con el precio y con todo, y se mide en las mismas velas de prueba. La página muestra las dos exactitudes y una conclusión en palabras; puede salir que no ayudan, y se dice.
+- **Lo de ahora** (`GET /api/ia/fuentes`): el valor de hoy de cada fuente, la proporción de cuentas de futuros que apuestan a que sube y el **movimiento esperado** por vela, que sale del DVOL: DVOL ÷ 100 × √(segundos de la vela ÷ segundos del año). Con DVOL 40 y velas de 1 hora, unos ±0,43 %.
+- **Polymarket y Kalshi** (mercados de predicciones) se evaluaron, pero están bloqueados en Colombia, así que no se usan.
+- **Caché:** una hora para las series y 10 minutos para lo de ahora; las fuentes se piden a la vez, en hilos.
+
 **Escalado.** El RSI va de 0 a 100 y un rendimiento ronda 0,01. Sin escalar, el RSI dominaría las distancias y los pasos del gradiente. Por eso cada característica se pasa a desviaciones respecto del promedio, y la media y la desviación se aprenden solo con el entrenamiento.
 
 ## Modelos
@@ -58,4 +75,4 @@ Tres modelos clásicos de aprendizaje supervisado, programados a mano en `bitcoi
 
 ## Servicio y API
 
-`ServicioIA` pide las últimas 1000 velas cerradas, entrena, mide y predice. Guarda el resultado de cada intervalo 10 minutos, porque entrenar con 1000 velas tarda unos 3 s. El endpoint es `GET /api/ia/predicciones` (ver [API.md](API.md)).
+`ServicioIA` pide las últimas 1000 velas cerradas y las series externas, entrena, mide y predice. Los textos que muestra la página (qué hace cada modelo, el veredicto frente a la base, la conclusión sobre las fuentes externas y los nombres de los intervalos) salen de `textos.py`: el frontend solo los dibuja. Guarda el resultado de cada intervalo 10 minutos, porque entrenar con 1000 velas tarda unos 3 s. El endpoint es `GET /api/ia/predicciones` (ver [API.md](API.md)).
