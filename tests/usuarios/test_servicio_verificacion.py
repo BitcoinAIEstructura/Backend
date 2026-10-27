@@ -56,6 +56,17 @@ def test_registrar_manda_el_codigo_y_no_abre_sesion(e: Entorno) -> None:
     assert inicio.correo == "a***@correo.co"
 
 
+def test_el_codigo_le_llega_a_cualquier_persona_que_se_registra(e: Entorno) -> None:
+    """La cuenta SMTP solo envía: cada código va al correo que escribió esa persona, de cualquier proveedor."""
+    correos = ("luis.gomez@hotmail.com", "maria_23@outlook.es", "pedro@yahoo.com", "sofia@unal.edu.co",
+               "Camilo.Rios@Gmail.com")
+    for i, correo in enumerate(correos):
+        r = e.servicio.registrar(datos(correo, f"10234567{i:02d}"), CLIENTE)
+        assert e.buzon.ultimo().destino == correo.lower()
+        usuario, _ = e.servicio.verificar_correo(r.token_verificacion or "", e.codigo(), CLIENTE)
+        assert usuario.correo == correo.lower()
+
+
 def test_el_codigo_confirma_el_correo_y_abre_la_sesion(e: Entorno) -> None:
     r = e.servicio.registrar(datos(), CLIENTE)
     assert r.token_verificacion is not None

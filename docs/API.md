@@ -794,7 +794,7 @@ Con la cookie `verificacion`, manda un código nuevo (el anterior deja de servir
 
 ### Correos
 
-- **Con SMTP** (`SMTP_USUARIO` y `SMTP_CONTRASENA`): se envían por Gmail u otro servidor, en un hilo aparte para no demorar la respuesta. Para Gmail, `SMTP_CONTRASENA` es una *contraseña de aplicación*: se crea en la cuenta de Google, en Seguridad → Verificación en dos pasos → Contraseñas de aplicaciones. Opcionales: `SMTP_HOST` (smtp.gmail.com), `SMTP_PUERTO` (587, o 465 para TLS directo) y `CORREO_REMITENTE`.
+- **Con SMTP** (`SMTP_USUARIO` y `SMTP_CONTRASENA`): se envían por Gmail u otro servidor, en un hilo aparte para no demorar la respuesta. Para Gmail, `SMTP_CONTRASENA` es una *contraseña de aplicación*: se crea en la cuenta de Google, en Seguridad → Verificación en dos pasos → Contraseñas de aplicaciones. Opcionales: `SMTP_HOST` (smtp.gmail.com), `SMTP_PUERTO` (587, o 465 para TLS directo) y `CORREO_REMITENTE`. `SMTP_USUARIO` es solo la cuenta desde la que salen: el código va siempre al correo que la persona escribió al registrarse, sea del proveedor que sea. Gmail permite unos 500 envíos al día; si se llega al límite, el registro lo dice y la persona puede pedir el reenvío más tarde.
 - **Sin SMTP:** cada correo se guarda como archivo `.eml` en `<DATA_DIR>/correos`, para probar sin configurar nada.
 - **El servidor lee un archivo `.env`** al arrancar (sin pisar lo que ya esté en el entorno), así la contraseña de aplicación no se escribe en cada terminal. `.env` no se sube a git.
 

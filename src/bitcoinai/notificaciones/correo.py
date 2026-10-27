@@ -27,6 +27,13 @@ LOG = logging.getLogger("bitcoinai.correo")
 NOMBRE_REMITENTE = "Nexabit"
 
 
+
+def es_limite_de_envios(error: smtplib.SMTPResponseException) -> bool:
+    """Si el servidor dice "llegaste al límite de envíos" (Gmail: ``550 5.4.5 Daily user sending limit``)."""
+    texto = error.smtp_error if isinstance(error.smtp_error, bytes) else str(error.smtp_error).encode()
+    return error.smtp_code in (421, 550) and (b"5.4.5" in texto or b"limit" in texto.lower())
+
+
 @dataclass(frozen=True, slots=True)
 class MensajeCorreo:
     destino: str
@@ -104,7 +111,8 @@ class CorreoSmtp:
         self._espera_s = espera_s
 
     def descripcion(self) -> str:
-        return f"SMTP {self._datos.host}:{self._datos.puerto} como {self._datos.remitente}"
+        return (f"SMTP {self._datos.host}:{self._datos.puerto} desde {self._datos.remitente} "
+                "hacia el correo de cada persona que se registra")
 
     def enviar(self, mensaje: MensajeCorreo) -> None:
         threading.Thread(target=self.enviar_ahora, args=(mensaje,), name="correo", daemon=True).start()
@@ -127,10 +135,22 @@ class CorreoSmtp:
             LOG.error("No se pudo enviar un correo: Gmail rechazó el usuario o la contraseña de aplicación "
                       "(revisa SMTP_USUARIO y SMTP_CONTRASENA)")
             return False
+        except smtplib.SMTPRecipientsRefused:
+            # El error trae la dirección: no se registra.
+            LOG.warning("No se pudo enviar un correo: el servidor rechazó la dirección de destino")
+            return False
+        except smtplib.SMTPResponseException as error:
+            if es_limite_de_envios(error):
+                LOG.error("No se pudo enviar un correo: se llegó al límite diario de envíos de la cuenta "
+                          "(en Gmail, unos 500 al día); se reinicia en 24 horas")
+            else:
+                LOG.error("No se pudo enviar un correo: el servidor respondió %d", error.smtp_code)
+            return False
         except (OSError, smtplib.SMTPException) as error:
             LOG.error("No se pudo enviar un correo: %s", type(error).__name__)
             return False
-        LOG.info("Correo enviado: %s", mensaje.asunto)
+        # Ni el asunto (lleva el código) ni el destinatario.
+        LOG.info("Correo enviado")
         return True
 
 
@@ -174,5 +194,10 @@ def enviador_desde_entorno(data_dir: str, entorno: Mapping[str, str] | None = No
     """SMTP si están ``SMTP_USUARIO`` y ``SMTP_CONTRASENA``; si no, la carpeta ``<DATA_DIR>/correos``."""
     datos = DatosSmtp.desde_entorno(entorno)
     if datos is not None:
+        if datos.host == "smtp.gmail.com" and datos.remitente.lower() != datos.usuario.lower():
+            # Gmail solo firma como la cuenta que inicia sesión (o un alias verificado en ella):
+            # con otro remitente, Hotmail, Outlook y otros suelen mandar el correo a spam.
+            LOG.warning("CORREO_REMITENTE es distinto de SMTP_USUARIO: con Gmail, déjalo vacío o pon un alias "
+                        "verificado en esa cuenta, o los correos pueden llegar a spam")
         return CorreoSmtp(datos)
     return BuzonLocal(f"{data_dir.rstrip('/')}/correos")

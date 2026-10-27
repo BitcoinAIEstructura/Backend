@@ -66,7 +66,7 @@ La clave maestra va en la variable `CLAVE_CIFRADO`, que es secreta. En localhost
 - **Para qué:** que nadie cree cuentas con correos ajenos o inventados. Hasta confirmar, la contraseña correcta no abre sesión: responde que falta el código.
 - **El código:** 6 dígitos de `secrets` (no `random`), vence en 15 minutos y admite 5 intentos. En la base solo queda su hash (con el id de la cuenta adentro) y el hash del token de la cookie `verificacion`.
 - **Reenvíos:** uno por minuto y 5 por hora por cuenta, para que no se pueda usar Nexabit para llenar de correos a alguien.
-- **Registros:** del correo solo se anota el asunto genérico o el tipo de error, nunca el destinatario, el código ni la contraseña SMTP (`DatosSmtp` la oculta en `repr`). La contraseña SMTP no se guarda en `Configuracion`.
+- **Registros:** del correo solo se anota que se envió o el tipo de error (el asunto no, porque lleva el código), nunca el destinatario, el código ni la contraseña SMTP (`DatosSmtp` la oculta en `repr`). La contraseña SMTP no se guarda en `Configuracion`.
 - **Las cuentas que ya existían** quedaron confirmadas al aplicar la migración 4.
 
 ## Verificación en dos pasos (TOTP)

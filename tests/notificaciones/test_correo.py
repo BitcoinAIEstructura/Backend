@@ -1,3 +1,4 @@
+import logging
 import smtplib
 from email import message_from_bytes, policy
 from pathlib import Path
@@ -39,9 +40,15 @@ def test_sin_smtp_los_correos_van_a_una_carpeta(tmp_path: Path) -> None:
     assert correo.get_body(("html",)) is not None and correo.get_body(("plain",)) is not None
 
 
-def test_con_smtp_usa_gmail(tmp_path: Path) -> None:
+def test_con_smtp_usa_gmail(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     enviador = enviador_desde_entorno(str(tmp_path), {"SMTP_USUARIO": "g@gmail.com", "SMTP_CONTRASENA": "x"})
     assert isinstance(enviador, CorreoSmtp) and "smtp.gmail.com:587" in enviador.descripcion()
+    assert "cada persona que se registra" in enviador.descripcion()
+    assert "CORREO_REMITENTE" not in caplog.text
+    # Con Gmail, otro remitente distinto de la cuenta hace que el correo llegue a spam: se avisa.
+    enviador_desde_entorno(str(tmp_path), {"SMTP_USUARIO": "g@gmail.com", "SMTP_CONTRASENA": "x",
+                                           "CORREO_REMITENTE": "no-responder@nexabit.co"})
+    assert "CORREO_REMITENTE es distinto" in caplog.text
 
 
 class SmtpFalso:
@@ -49,6 +56,7 @@ class SmtpFalso:
 
     hechos: list[str] = []
     falla_login = False
+    error_envio: Exception | None = None
 
     def __init__(self, host: str, puerto: int, timeout: float) -> None:
         SmtpFalso.hechos.append(f"conectar {host}:{puerto}")
@@ -68,12 +76,15 @@ class SmtpFalso:
         SmtpFalso.hechos.append(f"login {usuario}")
 
     def send_message(self, mensaje: Any) -> None:
+        if SmtpFalso.error_envio is not None:
+            raise SmtpFalso.error_envio
         SmtpFalso.hechos.append(f"enviar a {mensaje['To']}")
 
 
 def test_smtp_con_starttls_y_errores_sin_lanzar(monkeypatch: pytest.MonkeyPatch,
                                                 caplog: pytest.LogCaptureFixture) -> None:
     monkeypatch.setattr(smtplib, "SMTP", SmtpFalso)
+    caplog.set_level(logging.INFO)
     SmtpFalso.hechos = []
     enviador = CorreoSmtp(DatosSmtp("smtp.gmail.com", 587, "g@gmail.com", "secreta", "g@gmail.com"))
     mensaje = codigo_verificacion("ana@correo.co", "Ana", "123456", 15)
@@ -86,7 +97,7 @@ def test_smtp_con_starttls_y_errores_sin_lanzar(monkeypatch: pytest.MonkeyPatch,
     finally:
         SmtpFalso.falla_login = False
     registro = caplog.text
-    assert "contraseña de aplicación" in registro
+    assert "Correo enviado" in registro and "contraseña de aplicación" in registro
     assert "secreta" not in registro and "123456" not in registro and "ana@correo.co" not in registro
 
 
@@ -97,3 +108,19 @@ def test_armar_y_buzon_en_memoria() -> None:
     buzon = BuzonMemoria()
     buzon.enviar(m)
     assert buzon.ultimo() is m
+
+
+@pytest.mark.parametrize(("error", "esperado"), [
+    (smtplib.SMTPDataError(550, b"5.4.5 Daily user sending limit exceeded."), "límite diario"),
+    (smtplib.SMTPDataError(550, b"5.7.1 Message rejected"), "respondió 550"),
+    (smtplib.SMTPRecipientsRefused({"nadie@correo.co": (550, b"no existe")}), "rechazó la dirección"),
+])
+def test_errores_al_enviar_se_explican_sin_datos_personales(monkeypatch: pytest.MonkeyPatch,
+                                                            caplog: pytest.LogCaptureFixture,
+                                                            error: Exception, esperado: str) -> None:
+    monkeypatch.setattr(smtplib, "SMTP", SmtpFalso)
+    monkeypatch.setattr(SmtpFalso, "error_envio", error)
+    enviador = CorreoSmtp(DatosSmtp("smtp.gmail.com", 587, "g@gmail.com", "secreta", "g@gmail.com"))
+    assert enviador.enviar_ahora(codigo_verificacion("nadie@correo.co", "Ana", "654321", 15)) is False
+    assert esperado in caplog.text
+    assert "nadie@correo.co" not in caplog.text and "654321" not in caplog.text
