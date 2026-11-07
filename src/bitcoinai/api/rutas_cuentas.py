@@ -215,6 +215,7 @@ def crear_rutas_cuentas(servicio: ServicioCuentas, config: Configuracion) -> API
 
     @rutas.post("/api/cuentas/dos-pasos/desactivar", status_code=204)
     def desactivar_dos_pasos(cuerpo: CuerpoDesactivar, peticion: Request) -> None:
+        """Apaga la verificación en dos pasos; exige la contraseña y un código válido."""
         usuario, _ = sesion_de(peticion, servicio, cookies)
         servicio.desactivar_dos_pasos(usuario.id, cuerpo.contrasena, cuerpo.codigo, cliente_de(peticion, config))
 
@@ -233,6 +234,7 @@ def crear_rutas_cuentas(servicio: ServicioCuentas, config: Configuracion) -> API
 
     @rutas.delete("/api/cuentas/sesiones/{sesion_id}", status_code=204)
     def cerrar_una(sesion_id: int, peticion: Request) -> None:
+        """Cierra una sesión de otro dispositivo por su id (la sesión actual no se puede cerrar así)."""
         usuario, _ = sesion_de(peticion, servicio, cookies)
         servicio.cerrar_otra_sesion(usuario.id, sesion_id, cliente_de(peticion, config))
 
@@ -261,5 +263,6 @@ def crear_rutas_cuentas(servicio: ServicioCuentas, config: Configuracion) -> API
 
 
 def sesion_a_json(sesion: Sesion, actual: bool) -> dict[str, Any]:
+    """Sesión abierta tal como la ve el centro de seguridad (``actual`` marca la de este dispositivo)."""
     return {"id": sesion.id, "actual": actual, "ip": sesion.ip, "agente": sesion.agente,
             "creadaEn": sesion.creada_en, "ultimaActividad": sesion.ultima_actividad, "expiraEn": sesion.expira_en}
