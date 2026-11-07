@@ -39,17 +39,26 @@ class Configuracion:
             (``LIMITE_COSTOSAS``, 30).
     """
 
+    # Servidor y despliegue.
     puerto: int = 8080
     url_base_binance: str = URL_BASE_POR_DEFECTO
+
+    # CORS: origen del frontend autorizado a llamar la API ("*" en desarrollo).
     origen_permitido: str = "*"
+
+    # Mercado y almacenamiento.
     ttl_cache_segundos: int = 30
     simbolo: str = "BTCUSDT"
     max_streams: int = 50
     max_bots: int = 20
     data_dir: str = "./data"
     base_datos: str = ""
+
+    # Seguridad de la sesión y del proxy.
     cookie_segura: bool = False
     confiar_proxy: bool = False
+
+    # Límites de peticiones por minuto y por IP.
     limite_general: int = 600
     limite_costosas: int = 30
 
