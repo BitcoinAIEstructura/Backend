@@ -35,7 +35,7 @@ def codigo_hotp(secreto: str, contador: int, digitos: int = DIGITOS) -> str:
     """Código para un contador (RFC 4226): HMAC-SHA1 y "truncamiento dinámico"."""
     resumen = hmac.new(_bytes_secreto(secreto), struct.pack(">Q", contador), hashlib.sha1).digest()
     desplazamiento = resumen[-1] & 0x0F
-    numero = struct.unpack(">I", resumen[desplazamiento:desplazamiento + 4])[0] & 0x7FFFFFFF
+    numero = struct.unpack(">I", resumen[desplazamiento : desplazamiento + 4])[0] & 0x7FFFFFFF
     return str(numero % 10**digitos).zfill(digitos)
 
 
@@ -44,8 +44,9 @@ def paso(momento_segundos: float, periodo: int = PERIODO) -> int:
     return int(momento_segundos // periodo)
 
 
-def verificar(secreto: str, codigo: str, momento_segundos: float, ultimo_paso_usado: int | None = None,
-              ventana: int = VENTANA) -> int | None:
+def verificar(
+    secreto: str, codigo: str, momento_segundos: float, ultimo_paso_usado: int | None = None, ventana: int = VENTANA
+) -> int | None:
     """Comprueba un código.
 
     Un código ya usado no vale de nuevo (si alguien lo ve por encima del hombro,
@@ -70,6 +71,7 @@ def verificar(secreto: str, codigo: str, momento_segundos: float, ultimo_paso_us
 def uri_otpauth(secreto: str, cuenta: str, emisor: str = EMISOR) -> str:
     """Enlace ``otpauth://`` que va dentro del código QR para escanear con la app."""
     etiqueta = quote(f"{emisor}:{cuenta}", safe="")
-    parametros = urlencode({"secret": secreto, "issuer": emisor, "algorithm": "SHA1",
-                            "digits": DIGITOS, "period": PERIODO})
+    parametros = urlencode(
+        {"secret": secreto, "issuer": emisor, "algorithm": "SHA1", "digits": DIGITOS, "period": PERIODO}
+    )
     return f"otpauth://totp/{etiqueta}?{parametros}"
