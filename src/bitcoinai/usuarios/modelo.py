@@ -40,6 +40,7 @@ class DatosRegistro:
     @classmethod
     def validar(cls, nombre: str, apellido: str, correo: str, tipo_documento: str, numero_documento: str,
                 telefono: str, contrasena: str) -> "DatosRegistro":
+        """Normaliza cada campo y valida la política de contraseña antes de crear la cuenta."""
         tipo = leer_tipo_documento(tipo_documento)
         datos = cls(
             nombre=normalizar_nombre(nombre, "nombre"),
@@ -73,10 +74,12 @@ class Usuario:
 
     @property
     def documento_enmascarado(self) -> str:
+        """Documento listo para mostrar en la API: solo se ven los últimos cuatro dígitos."""
         return enmascarar(self.numero_documento)
 
     @property
     def telefono_enmascarado(self) -> str:
+        """Teléfono con el prefijo visible y el resto oculto (para el centro de seguridad)."""
         return self.telefono[:3] + enmascarar(self.telefono[3:])
 
 
