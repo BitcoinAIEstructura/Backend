@@ -3,6 +3,13 @@
 Lee la configuración del entorno, arma la fuente de mercado (Binance con caché)
 y arranca el servidor HTTP con uvicorn en 0.0.0.0 y el puerto PORT.
 Ctrl+C lo apaga limpiamente.
+
+Responsabilidades principales:
+
+- Cargar variables desde ``.env`` sin pisar las del entorno del sistema.
+- Abrir SQLite y aplicar las migraciones pendientes.
+- Construir la app FastAPI con cuentas, simulación, alertas y datos externos.
+- Arrancar uvicorn con el registro de peticiones propio del middleware.
 """
 
 import logging
