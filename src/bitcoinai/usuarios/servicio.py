@@ -474,11 +474,13 @@ class ServicioCuentas:
         return usuario, sesion
 
     def cerrar_sesion(self, token: str, cliente: Cliente) -> None:
+        """Cierra la sesión del token si sigue vigente; si ya no existe, no hace nada."""
         sesion = self.sesiones.validar(token)
         if sesion is not None and self.sesiones.cerrar_token(token):
             self.actividad.registrar(sesion.usuario_id, TipoActividad.CIERRE_SESION, cliente.ip)
 
     def sesiones_activas(self, usuario_id: int) -> Lista[Sesion]:
+        """Sesiones abiertas del usuario, la más reciente primero."""
         return self.sesiones.activas(usuario_id)
 
     def cerrar_otra_sesion(self, usuario_id: int, sesion_id: int, cliente: Cliente) -> None:
@@ -495,6 +497,7 @@ class ServicioCuentas:
         return cerradas
 
     def actividad_reciente(self, usuario_id: int, limite: int = 50) -> Lista[EventoActividad]:
+        """Últimos eventos de seguridad del usuario (inicios de sesión, códigos fallidos, cambios)."""
         return self.actividad.recientes(usuario_id, limite)
 
     # ---------- contraseña ----------
