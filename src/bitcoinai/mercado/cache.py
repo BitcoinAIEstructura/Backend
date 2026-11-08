@@ -63,6 +63,9 @@ class CacheMercado:
         return cast(float, self._obtener(f"precio|{simbolo}", lambda: self._fuente.obtener_precio_actual(simbolo)))
 
     def _obtener(self, clave: str, cargar: Callable[[], object]) -> object:
+        # TODO: purgar entradas vencidas cuando el diccionario supere cierto tamaño;
+        # hoy solo se reemplazan las claves que se vuelven a pedir y el resto queda
+        # en memoria hasta que termine el proceso.
         ahora = self._reloj()
         entrada = self._entradas.get(clave)
         if entrada is not None and ahora < entrada.expira_en:
