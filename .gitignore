@@ -15,6 +15,11 @@ dist/
 .idea/
 .vscode/
 
+# Cobertura de pruebas
+.coverage
+.coverage.*
+htmlcov/
+
 # Entorno y datos locales
 .env
 data/
