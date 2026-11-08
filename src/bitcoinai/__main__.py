@@ -116,8 +116,8 @@ def main() -> None:
         LOG.info("Variables leídas de .env: %d", cargadas)
     config = Configuracion.desde_entorno()
     app = construir(config)
-    print(f"Backend iniciado en http://0.0.0.0:{config.puerto} "
-          f"(símbolo {config.simbolo}, Binance {config.url_base_binance})", flush=True)
+    LOG.info("Backend iniciado en http://0.0.0.0:%s (símbolo %s, Binance %s)",
+             config.puerto, config.simbolo, config.url_base_binance)
     # access_log=False: el registro de cada petición lo hace MiddlewareRegistro.
     # timeout_graceful_shutdown: las conexiones de /api/stream no terminan solas; al apagar se cortan.
     uvicorn.run(app, host="0.0.0.0", port=config.puerto, access_log=False, log_level="warning",
