@@ -491,7 +491,7 @@ class ServicioCuentas:
 
     def cerrar_otras_sesiones(self, usuario_id: int, actual: int, cliente: Cliente) -> int:
         """Cierra todas las sesiones menos la actual. Returns: cuántas cerró."""
-        cerradas = self.sesiones.cerrar_todas(usuario_id, excepto=actual)
+        cerradas: int = self.sesiones.cerrar_todas(usuario_id, excepto=actual)
         if cerradas:
             self.actividad.registrar(usuario_id, TipoActividad.SESIONES_CERRADAS, cliente.ip, f"{cerradas} sesiones")
         return cerradas
