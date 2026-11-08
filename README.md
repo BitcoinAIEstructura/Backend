@@ -146,10 +146,16 @@ Detalle, parámetros y ejemplos en [docs/API.md](docs/API.md).
 | --- | --- |
 | `GET /health` | Estado del servicio, sin consultar Binance |
 | `GET /api/precio` | Último precio de BTCUSDT |
+| `GET /api/precio/recientes` | Últimos precios vistos por el servidor (sin consultar Binance) |
 | `GET /api/velas?intervalo=1d&cantidad=200` | Velas (1m, 5m, 15m, 1h, 4h, 1d; hasta 1000) |
 | `GET /api/indicadores?indicador=rsi&periodo=14` | Indicador técnico: sma, ema, rsi, macd, bollinger, volatilidad |
 | `GET /api/senal?estrategia=combinada` | Decisión más reciente y pronóstico de una estrategia |
 | `GET /api/backtest?estrategia=cruce&capital=1000` | Backtest y validación entrenamiento/prueba (70/30) |
+| `GET /api/si-hubiera?fecha=2024-01-01&monto=1000` | Cuánto valdría hoy una compra hecha al abrir ese día |
+| `GET /api/ia/predicciones?intervalo=1h` | Predicción del modelo de IA y sus métricas |
+| `GET /api/ia/fuentes?intervalo=1h` | Lo que dicen las fuentes externas según la IA |
+| `GET /api/buscar?q=rsi` | Búsqueda global de páginas, acciones, indicadores y conceptos |
+| `POST /api/asistente` | Chat del bot: responde con los datos de la sesión actual |
 | `POST /api/ordenes` | Crea una orden simulada `{"tipo":"COMPRA","monto":500}`. Órdenes, cartera, historial y bot son de cada usuario y exigen sesión |
 | `GET /api/ordenes?estado=PENDIENTE` | Lista órdenes |
 | `GET /api/ordenes/{id}` | Una orden |
@@ -162,7 +168,12 @@ Detalle, parámetros y ejemplos en [docs/API.md](docs/API.md).
 | `POST /api/bot/detener` | Detiene el bot |
 | `GET /api/bot/estado` | Estado del bot y su última decisión |
 | `GET /api/stream` | Eventos en tiempo real (SSE): `precio`, `orden`, `cartera`, `senal` |
+| `GET /api/liga` | Los 10 mejores inversores por rentabilidad y el puesto de la sesión |
+| `GET /api/estructuras` | Foto de las estructuras de datos en uso (cola, pilas, etc.) |
+| `POST /api/estructuras/demo` | Carga datos de ejemplo en las estructuras para probarlas |
+| `GET /api/alertas` · `POST /api/alertas` · `DELETE /api/alertas/{id}` | Alertas de precio de la sesión |
 | `POST /api/cuentas/registro` | Crea una cuenta (cédula, nombre, apellido, correo, teléfono y contraseña) |
+| `POST /api/cuentas/verificar-correo` · `POST /api/cuentas/reenviar-codigo` | Confirma el correo con el código de 6 dígitos y permite pedir otro |
 | `POST /api/sesion` · `POST /api/sesion/codigo` · `DELETE /api/sesion` | Iniciar sesión (con código de 6 dígitos si hay verificación en dos pasos) y cerrarla |
 | `GET /api/cuentas/yo` | La cuenta de la sesión actual |
 | `/api/cuentas/dos-pasos…`, `/api/cuentas/sesiones…`, `/api/cuentas/actividad`, `/api/cuentas/contrasena` | Centro de seguridad |
