@@ -9,18 +9,25 @@ description = "Backend del bot de Bitcoin: velas de Binance, indicadores, señal
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    # API HTTP (routers, validación con Pydantic y OpenAPI).
     "fastapi>=0.143,<1",
+    # Servidor ASGI que ejecuta la app en producción.
     "uvicorn>=0.54,<1",
+    # Cliente HTTP para Binance y las fuentes externas.
     "httpx>=0.28.1,<1",
+    # Hash de contraseñas con Argon2 (la recomendación actual de OWASP).
     "argon2-cffi>=25.1,<26",
+    # Cifrado de datos personales y secretos guardados en reposo.
     "cryptography>=46,<51",
 ]
 
 [project.optional-dependencies]
 dev = [
+    # Pruebas, estilo y tipos: es lo que ejecuta el CI.
     "pytest>=9.1,<10",
     "ruff==0.16.10",
     "mypy>=2.4,<3",
+    # Revisión de vulnerabilidades conocidas en las dependencias.
     "pip-audit>=2.10.1,<3",
 ]
 
