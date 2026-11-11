@@ -38,6 +38,7 @@ Backend que obtiene velas de BTCUSDT de Binance, calcula indicadores, genera se�
 - Tipos: `mypy src`
 - Auditoría de dependencias: `python -m pip_audit` (y `npm audit --omit=dev` en el frontend)
 - Ejecutar: `python -m bitcoinai`
+- Cuenta de demostración con historial (Jonathan Mideros, ~40 días a precios reales de Binance): `python -m bitcoinai.demo --guardar-en ../cuenta-de-prueba.local.md`. La contraseña se genera al azar y solo se escribe en ese archivo (fuera de git). Correrlo con el servidor apagado, o reiniciarlo después: la cuenta se recrea.
 
 ## Convenciones
 - Cada módulo público lleva pruebas pytest.
