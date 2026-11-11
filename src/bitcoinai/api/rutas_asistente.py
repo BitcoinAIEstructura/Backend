@@ -2,31 +2,47 @@
 
 El asistente nunca enciende ni detiene el bot por su cuenta: si se lo piden, la respuesta
 trae una ``accion`` y el frontend la muestra como botón; tocarlo llama a /api/bot/….
+
+Con un ``Conversador`` (hay ``ANTHROPIC_API_KEY``), Claude escribe el texto con los datos de
+práctica y el ``historial`` reciente; la acción y las sugerencias siguen saliendo del asistente
+de reglas. Si Claude no responde, queda el texto de las reglas (``fuente``: "reglas").
 """
 
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from bitcoinai.api.configuracion import Configuracion
 from bitcoinai.api.errores import ApiError
 from bitcoinai.api.rutas_cuentas import Cookies, sesion_de
 from bitcoinai.asistente import Asistente, DatosUsuario
 from bitcoinai.asistente.asistente import LARGO_MAXIMO
+from bitcoinai.asistente.contexto import armar_contexto
+from bitcoinai.asistente.conversador import LARGO_MAXIMO_TURNO, TURNOS_DE_HISTORIAL, Conversador, Turno
 from bitcoinai.mercado import MercadoError
-from bitcoinai.simulacion import EstadoOrden, GestorSimulaciones
+from bitcoinai.simulacion import ConsejoPiloto, EstadoOrden, GestorSimulaciones, LimitesPiloto
 from bitcoinai.usuarios.servicio import ServicioCuentas
+
+
+class TurnoChat(BaseModel):
+    model_config = ConfigDict(strict=True, extra="ignore")
+
+    rol: str
+    texto: str = Field(max_length=LARGO_MAXIMO_TURNO)
 
 
 class CuerpoMensaje(BaseModel):
     model_config = ConfigDict(strict=True, extra="ignore")
 
     mensaje: str | None = None
+    # Los mensajes anteriores del chat (solo los usa Claude); se aceptan hasta 20 y se usan los últimos.
+    historial: list[TurnoChat] = Field(default_factory=list, max_length=2 * TURNOS_DE_HISTORIAL)
 
 
 def crear_rutas_asistente(gestor: GestorSimulaciones, cuentas: ServicioCuentas, config: Configuracion,
-                          asistente: Asistente | None = None) -> APIRouter:
+                          asistente: Asistente | None = None,
+                          conversador: Conversador | None = None) -> APIRouter:
     cookies = Cookies(config)
 
     def exigir_sesion(peticion: Request) -> None:
@@ -36,6 +52,16 @@ def crear_rutas_asistente(gestor: GestorSimulaciones, cuentas: ServicioCuentas, 
 
     rutas = APIRouter(dependencies=[Depends(exigir_sesion)])
     elegido = asistente or Asistente()
+
+    def consejo_de(usuario_id: int) -> ConsejoPiloto | None:
+        """El consejo de la IA para el contexto de Claude; si no se puede, se habla sin él."""
+        if gestor.piloto is None:
+            return None
+        c = gestor.bot(usuario_id).estado().configuracion
+        try:
+            return gestor.piloto.aconsejar("1h", LimitesPiloto(c.riesgo, c.stop_loss, c.take_profit))
+        except Exception:  # sin velas o sin mercado: Claude responde con el resto de los datos
+            return None
 
     @rutas.post("/api/asistente")
     def conversar(cuerpo: CuerpoMensaje, peticion: Request) -> dict[str, Any]:
@@ -54,9 +80,16 @@ def crear_rutas_asistente(gestor: GestorSimulaciones, cuentas: ServicioCuentas, 
         datos = DatosUsuario(cartera, gestor.bot(usuario_id).estado(),
                              libro.ordenes(EstadoOrden.PENDIENTE).tamanio())
         r = elegido.responder(mensaje, datos)
+        texto, fuente = r.texto, "reglas"
+        if conversador is not None:
+            historial = tuple(Turno(t.rol, t.texto) for t in cuerpo.historial if t.rol in ("usuario", "bot"))
+            contexto = armar_contexto(datos, libro.ordenes(EstadoOrden.EJECUTADA), consejo_de(usuario_id))
+            de_claude = conversador.responder(usuario_id, mensaje, historial, contexto)
+            if de_claude is not None:
+                texto, fuente = de_claude, "ia"
         accion = None if r.accion is None else {
             "tipo": r.accion.tipo, "etiqueta": r.accion.etiqueta, "ruta": r.accion.ruta}
-        return {"intencion": r.intencion, "respuesta": r.texto, "accion": accion,
-                "sugerencias": list(r.sugerencias)}
+        return {"intencion": r.intencion, "respuesta": texto, "accion": accion,
+                "sugerencias": list(r.sugerencias), "fuente": fuente}
 
     return rutas

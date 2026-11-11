@@ -23,6 +23,7 @@ from bitcoinai.alertas.servicio import ServicioAlertas
 from bitcoinai.api import Configuracion, crear_app
 from bitcoinai.api.publicador import Publicador, PublicadorDeUsuario
 from bitcoinai.api.rutas_alertas import alerta_a_json
+from bitcoinai.asistente.conversador import conversador_desde_entorno
 from bitcoinai.basedatos import BaseDatos
 from bitcoinai.basedatos.migraciones import migrar
 from bitcoinai.externos import DatosExternos
@@ -108,7 +109,7 @@ def construir(config: Configuracion, hasher: HashContrasenas | None = None) -> F
                               al_disparar=lambda a: publicador.publicar_a(a.usuario_id, "alerta", alerta_a_json(a)))
     return crear_app(config, fuente, publicador=publicador, cuentas=construir_cuentas(config, bd, hasher),
                      gestor=gestor, participantes=lambda precio: participantes_activos(bd, precio), alertas=alertas,
-                     externos=externos, ia=ia)
+                     externos=externos, ia=ia, conversador=conversador_desde_entorno())
 
 
 def main() -> None:

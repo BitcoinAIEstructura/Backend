@@ -41,7 +41,8 @@ def test_responde_con_los_datos_de_la_persona(app: FastAPI) -> None:
     r = post(c, "/api/asistente", '{"mensaje":"¿tengo órdenes pendientes?"}')
     assert r.status_code == 200, r.text
     cuerpo = r.json()
-    assert list(cuerpo) == ["intencion", "respuesta", "accion", "sugerencias"]
+    assert list(cuerpo) == ["intencion", "respuesta", "accion", "sugerencias", "fuente"]
+    assert cuerpo["fuente"] == "reglas"  # sin ANTHROPIC_API_KEY, solo reglas
     assert cuerpo["intencion"] == "ordenes" and "1 orden espera" in cuerpo["respuesta"]
     assert cuerpo["accion"] == {"tipo": "IR", "etiqueta": "Ir a Órdenes", "ruta": "/ordenes"}
     assert len(cuerpo["sugerencias"]) >= 2
@@ -70,3 +71,59 @@ def test_sin_precio_igual_responde(app: FastAPI, fuente: FuenteFalsa) -> None:
 def test_mensajes_invalidos(app: FastAPI, cuerpo: str, fragmento: str) -> None:
     r = post(registrado(app), "/api/asistente", cuerpo)
     assert r.status_code == 400 and fragmento in r.json()["error"]
+
+
+# ---------- con Claude (cliente falso: nunca se llama a la API real) ----------
+
+
+class ClienteClaudeFalso:
+    def __init__(self, falla: bool = False) -> None:
+        self.falla = falla
+        self.pedidos: list[dict[str, object]] = []
+
+    def crear(self, **parametros: object) -> object:
+        from types import SimpleNamespace
+
+        self.pedidos.append(parametros)
+        if self.falla:
+            raise RuntimeError("sin red")
+        return SimpleNamespace(stop_reason="end_turn",
+                               content=[SimpleNamespace(type="text", text="Con 10.000 USDT de práctica…")])
+
+
+def app_con_claude(fuente: FuenteFalsa, gestor: GestorSimulaciones, cliente: ClienteClaudeFalso) -> FastAPI:
+    from bitcoinai.asistente.conversador import Conversador
+
+    return crear_app(Configuracion(), fuente, cuentas=crear_entorno().servicio, gestor=gestor,
+                     conversador=Conversador(cliente))
+
+
+def test_con_claude_el_texto_es_de_la_ia_y_la_accion_de_las_reglas(fuente: FuenteFalsa,
+                                                                  gestor: GestorSimulaciones) -> None:
+    cliente = ClienteClaudeFalso()
+    c = registrado(app_con_claude(fuente, gestor, cliente))
+    r = c.post("/api/asistente", json={"mensaje": "enciéndete", "historial": [
+        {"rol": "usuario", "texto": "hola"}, {"rol": "bot", "texto": "¡Hola! ¿En qué te ayudo?"}]})
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert cuerpo["fuente"] == "ia" and cuerpo["respuesta"] == "Con 10.000 USDT de práctica…"
+    assert cuerpo["accion"]["tipo"] == "INICIAR_BOT"  # el botón lo decide el asistente de reglas
+    mensajes = cliente.pedidos[0]["messages"]
+    assert isinstance(mensajes, list) and len(mensajes) == 3
+    ultimo = str(mensajes[-1]["content"])
+    assert "Cartera: vale 10.000,00 USDT" in ultimo
+    # A Claude nunca le llegan datos personales.
+    for dato in ("ana@correo.co", "1023456789", "Ana", "3001234567"):
+        assert dato not in ultimo
+
+
+def test_si_claude_falla_responden_las_reglas(fuente: FuenteFalsa, gestor: GestorSimulaciones) -> None:
+    c = registrado(app_con_claude(fuente, gestor, ClienteClaudeFalso(falla=True)))
+    cuerpo = c.post("/api/asistente", json={"mensaje": "¿cuánto he ganado?"}).json()
+    assert cuerpo["fuente"] == "reglas" and cuerpo["intencion"] == "ganancia"
+
+
+def test_el_historial_se_valida(fuente: FuenteFalsa, gestor: GestorSimulaciones) -> None:
+    c = registrado(app_con_claude(fuente, gestor, ClienteClaudeFalso()))
+    largo = c.post("/api/asistente", json={"mensaje": "hola", "historial": [{"rol": "usuario", "texto": "x" * 2000}]})
+    assert largo.status_code == 400

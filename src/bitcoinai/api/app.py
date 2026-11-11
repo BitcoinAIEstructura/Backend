@@ -28,6 +28,7 @@ from bitcoinai.api.rutas_liga import crear_rutas_liga
 from bitcoinai.api.rutas_mercado import crear_rutas_mercado
 from bitcoinai.api.rutas_simulacion import crear_rutas_simulacion
 from bitcoinai.api.rutas_stream import crear_rutas_stream
+from bitcoinai.asistente.conversador import Conversador
 from bitcoinai.busqueda import Buscador
 from bitcoinai.estructuras import Lista
 from bitcoinai.externos import DatosExternos
@@ -42,7 +43,7 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
               cuentas: ServicioCuentas | None = None, gestor: GestorSimulaciones | None = None,
               participantes: Callable[[float], Lista[Participante]] | None = None,
               alertas: ServicioAlertas | None = None, externos: DatosExternos | None = None,
-              ia: ServicioIA | None = None) -> FastAPI:
+              ia: ServicioIA | None = None, conversador: Conversador | None = None) -> FastAPI:
     """Crea la API con sus dependencias (en las pruebas, una ``FuenteFalsa``).
 
     - Todas las respuestas son ``application/json; charset=utf-8``, incluidos los errores.
@@ -60,6 +61,7 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
     - Con ``externos``, la IA aprende también de las fuentes externas y ``GET /api/ia/fuentes`` las muestra.
     - ``ia``: el servicio de la IA compartido con el piloto del bot (si no se pasa, se crea uno). El
       consejo de la IA (``GET /api/ia/consejo``) usa el piloto del ``gestor``.
+    - ``conversador``: Claude escribe las respuestas del chat (sin él, solo el asistente de reglas).
     - La documentación interactiva queda en ``/docs``.
     """
 
@@ -99,7 +101,7 @@ def crear_app(config: Configuracion, fuente: FuenteDeMercado, *, publicador: Pub
     app.include_router(crear_rutas_estructuras(gestor, cuentas, recientes, buscador, config))
     if gestor is not None and cuentas is not None:
         app.include_router(crear_rutas_simulacion(gestor, cuentas, config, gestor.piloto))
-        app.include_router(crear_rutas_asistente(gestor, cuentas, config))
+        app.include_router(crear_rutas_asistente(gestor, cuentas, config, conversador=conversador))
     if publicador is not None:
         app.include_router(crear_rutas_stream(publicador, cuentas, config))
     if cuentas is not None:

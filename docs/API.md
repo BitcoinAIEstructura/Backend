@@ -617,7 +617,7 @@ Si un ciclo falla (por ejemplo, Binance no responde), queda en `ultimoError` y e
 
 ### Chat con el bot: `POST /api/asistente`
 
-Exige sesión (la revisa antes que el cuerpo). Cuerpo: `{"mensaje":"¿qué estás haciendo?"}`, de 1 a 300 caracteres; vacío o más largo → `400`.
+Exige sesión (la revisa antes que el cuerpo). Cuerpo: `{"mensaje":"¿qué estás haciendo?", "historial":[{"rol":"usuario","texto":"hola"},{"rol":"bot","texto":"¡Hola!"}]}`. `mensaje` va de 1 a 300 caracteres (vacío o más largo → `400`). `historial` es opcional: hasta 20 mensajes anteriores (`rol` `usuario` o `bot`, `texto` de hasta 1500 caracteres); solo lo usa Claude.
 
 Responde preguntas sencillas con los datos de esa persona: qué hace el bot y cuándo es su próxima revisión, por qué tomó su última decisión, cuánto ha ganado, el precio, las órdenes en espera y la página de la IA. También explica palabras como «stop loss», «take profit», «RSI», «MACD», «vela», «USDT» o «comisión». No usa servicios externos: entiende el mensaje con un trie de raíces (ver `docs/ESTRUCTURAS.md`).
 
@@ -626,9 +626,12 @@ Responde preguntas sencillas con los datos de esa persona: qué hace el bot y cu
   "intencion": "iniciar-bot",
   "respuesta": "¿Me enciendo? Revisaré el mercado cada minuto y usaré el 20 % de tus USDT en cada compra. …",
   "accion": {"tipo": "INICIAR_BOT", "etiqueta": "Sí, enciéndete", "ruta": null},
-  "sugerencias": ["¿Qué estás haciendo?", "Detente"]
+  "sugerencias": ["¿Qué estás haciendo?", "Detente"],
+  "fuente": "reglas"
 }
 ```
+
+**Con Claude (opcional).** Si el servidor tiene `ANTHROPIC_API_KEY` (en el entorno o en `.env`), Claude (por defecto `claude-sonnet-5-5`, o el de `ASISTENTE_MODELO`) escribe el texto de `respuesta` con los datos de práctica de la persona (cartera, bot, órdenes recientes y consejo de la IA) y los últimos 10 mensajes del `historial`; entonces `fuente` es `"ia"`. Sin clave, si Claude falla o si la persona pasa de 30 mensajes por hora, responde el asistente de reglas (`fuente`: `"reglas"`). `accion` y `sugerencias` siempre salen del asistente de reglas: Claude no puede encender, detener ni operar nada.
 
 - `intencion`: `saludo`, `gracias`, `ayuda`, `estado-bot`, `iniciar-bot`, `detener-bot`, `por-que`, `ganancia`, `precio`, `ordenes`, `ia`, `concepto:<id>` o `no-entendi`.
 - `accion` (o `null`): `INICIAR_BOT`, `DETENER_BOT` o `IR` (con `ruta`). **El asistente nunca enciende ni detiene el bot por su cuenta**: el frontend muestra la acción como un botón y, si la persona lo toca, llama a `POST /api/bot/iniciar` o `/api/bot/detener`.

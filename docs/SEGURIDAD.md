@@ -112,6 +112,14 @@ Cada cuenta guarda sus eventos de seguridad, con momento e IP:
 
 El usuario lo ve en su centro de seguridad, para detectar accesos que no reconoce.
 
+## Chat con Claude (opcional)
+
+- Solo se activa con `ANTHROPIC_API_KEY` en el entorno o en `.env` (que no se sube a git). La clave nunca llega al frontend ni a los registros.
+- A Claude solo se le envían los datos de la simulación (cartera, bot, órdenes, consejo de la IA) y el texto del chat; nunca el nombre, el correo, el documento ni el teléfono.
+- Claude solo escribe texto. Las acciones (encender o detener el bot, ir a una página) las decide el asistente de reglas y las confirma la persona con un botón.
+- Las instrucciones le piden tratar los datos como datos (no como órdenes), no prometer ganancias y recordar que todo es práctica, sin asesoría financiera.
+- Máximo 30 mensajes por hora por persona hacia Claude; si se pasa, o si Claude falla, responde el asistente de reglas.
+
 ## En producción (Railway)
 
 - **`CLAVE_CIFRADO`:** defínela como variable secreta. Para generar una:
