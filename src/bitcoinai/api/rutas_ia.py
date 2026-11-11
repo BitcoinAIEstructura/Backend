@@ -112,7 +112,8 @@ def crear_rutas_ia(fuente: FuenteDeMercado, simbolo: str, servicio: ServicioIA |
             "modelos": [_modelo(m) for m in p.modelos],
             "caracteristicas": [{"nombre": n, "valor": v} for n, v in zip(p.nombres, p.caracteristicas, strict=True)],
             "arbol": _nodo(p.arbol, p.caracteristicas, p.nombres, True),
-            "prueba": [{"tiempo": q.tiempo, "probabilidad": q.probabilidad, "subio": q.subio} for q in p.prueba],
+            "prueba": [{"tiempo": q.tiempo, "probabilidad": q.probabilidad, "subio": q.subio,
+                        "rendimiento": q.rendimiento} for q in p.prueba],
             "fuentesExternas": {
                 "usadas": [{"id": f, "nombre": NOMBRE_FUENTE.get(f, f)} for f in p.fuentes_usadas],
                 "omitidas": [{"id": f, "nombre": NOMBRE_FUENTE.get(f, f), "motivo": motivo}

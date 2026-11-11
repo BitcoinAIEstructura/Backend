@@ -77,3 +77,50 @@ class AlmacenSimulacion(Protocol):
     def cargar(self) -> EstadoSimulacion | None:
         """Último estado guardado, o None si no hay nada utilizable (nunca falla)."""
         ...
+
+
+@dataclass(frozen=True, slots=True)
+class LimitesPiloto:
+    """Hasta dónde puede llegar el piloto automático: él decide dentro de estos topes."""
+
+    riesgo: float
+    stop_loss: float
+    take_profit: float
+
+
+@dataclass(frozen=True, slots=True)
+class ConsejoPiloto:
+    """Lo que decide la IA para la vela siguiente, con los ajustes de riesgo que eligió.
+
+    Atributos:
+        senal: "COMPRAR", "VENDER" o "MANTENER".
+        probabilidad: probabilidad de que suba la próxima vela, según el comité (0 a 1).
+        confianza: 0 si dice 50 %, 1 si dice 0 % o 100 %.
+        exactitud, base: cómo le fue al comité en las velas de prueba (no vistas) y la base.
+        riesgo, stop_loss, take_profit: lo que el piloto usaría ahora (fracciones).
+        volatilidad: desviación típica de los rendimientos recientes, de donde salen los topes.
+        intervalo, tiempo_vela, precio: la vela sobre la que se decidió.
+        motivo: la decisión explicada en una frase.
+    """
+
+    senal: str
+    probabilidad: float
+    confianza: float
+    exactitud: float
+    base: float
+    riesgo: float
+    stop_loss: float
+    take_profit: float
+    volatilidad: float
+    intervalo: str
+    tiempo_vela: int
+    precio: float
+    motivo: str
+
+
+class Piloto(Protocol):
+    """Quien decide en el modo "Piloto IA" (la implementación está en ``ia.piloto``)."""
+
+    def aconsejar(self, intervalo: str, limites: LimitesPiloto) -> ConsejoPiloto:
+        """Raises: cualquier error del mercado o de la IA; el bot lo registra y sigue."""
+        ...

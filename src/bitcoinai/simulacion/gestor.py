@@ -16,7 +16,7 @@ from bitcoinai.estructuras import Lista, TablaHash
 from bitcoinai.mercado import FuenteDeMercado
 from bitcoinai.simulacion.bot import BotSimulado, ConfiguracionBot, EstadoBot
 from bitcoinai.simulacion.cartera import SALDO_INICIAL_POR_DEFECTO, Cartera
-from bitcoinai.simulacion.interfaces import AlmacenSimulacion, PublicadorEventos, SinPublicar
+from bitcoinai.simulacion.interfaces import AlmacenSimulacion, Piloto, PublicadorEventos, SinPublicar
 from bitcoinai.simulacion.libro import LibroDeOrdenes
 from bitcoinai.simulacion.modelo import OperacionInvalidaError
 
@@ -42,7 +42,7 @@ class GestorSimulaciones:
                  crear_publicador: Callable[[int], PublicadorEventos] | None = None,
                  crear_estrategia: Callable[[], Estrategia] = EstrategiaCombinada,
                  saldo_inicial: float = SALDO_INICIAL_POR_DEFECTO,
-                 maximo_bots: int = MAXIMO_BOTS_POR_DEFECTO) -> None:
+                 maximo_bots: int = MAXIMO_BOTS_POR_DEFECTO, piloto: Piloto | None = None) -> None:
         self._fuente = fuente
         self._simbolo = simbolo
         self._crear_almacen = crear_almacen
@@ -50,6 +50,7 @@ class GestorSimulaciones:
         self._crear_estrategia = crear_estrategia
         self._saldo_inicial = saldo_inicial
         self.maximo_bots = maximo_bots
+        self.piloto = piloto  # el mismo para todos: la IA entrena una vez y comparte la caché
         self._simulaciones: TablaHash[int, SimulacionUsuario] = TablaHash()
         self._candado = threading.Lock()
 
@@ -65,7 +66,7 @@ class GestorSimulaciones:
             publicador = self._crear_publicador(usuario_id)
             libro.usar_publicador(publicador)
             # Cada bot con su propia estrategia: guardan memoria de indicadores entre ciclos.
-            bot = BotSimulado(libro, self._fuente, self._crear_estrategia(), self._simbolo)
+            bot = BotSimulado(libro, self._fuente, self._crear_estrategia(), self._simbolo, piloto=self.piloto)
             bot.usar_publicador(publicador)
             nueva = SimulacionUsuario(libro, bot)
             self._simulaciones.poner(usuario_id, nueva)

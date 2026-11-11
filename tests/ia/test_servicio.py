@@ -24,6 +24,8 @@ def test_entrena_mide_y_predice() -> None:
     assert sum(m.peso or 0 for m in p.modelos) == pytest.approx(1.0)
     assert 0 <= p.comite.probabilidad <= 1 and p.comite.direccion in ("SUBE", "BAJA")
     assert p.prueba.tamanio() == 90
+    # Cada punto de prueba trae cuánto cambió el precio en la vela siguiente, coherente con "subio".
+    assert all((q.rendimiento > 0) == q.subio for q in p.prueba if q.rendimiento != 0)
     assert all(m.metricas.muestras == 90 for m in p.modelos)
     assert "No es asesoría financiera" in p.aviso
 

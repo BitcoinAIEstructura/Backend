@@ -26,6 +26,8 @@ from bitcoinai.api.rutas_alertas import alerta_a_json
 from bitcoinai.basedatos import BaseDatos
 from bitcoinai.basedatos.migraciones import migrar
 from bitcoinai.externos import DatosExternos
+from bitcoinai.ia.piloto import PilotoIA
+from bitcoinai.ia.servicio import ServicioIA
 from bitcoinai.mercado import CacheMercado, ClienteBinance
 from bitcoinai.notificaciones import EnviadorCorreo, enviador_desde_entorno
 from bitcoinai.persistencia import AlmacenBaseDatos, participantes_activos
@@ -94,16 +96,19 @@ def construir(config: Configuracion, hasher: HashContrasenas | None = None) -> F
     fuente = CacheMercado(ClienteBinance(config.url_base_binance), config.ttl_cache_segundos)
     publicador = Publicador(fuente, config.simbolo, config.max_streams)
     bd = abrir_base_datos(config)
+    externos = DatosExternos()
+    # Una sola IA: la usan la página de predicciones, el consejo y el piloto de todos los bots.
+    ia = ServicioIA(fuente, config.simbolo, externos=externos)
     gestor = GestorSimulaciones(fuente, config.simbolo,
                                 crear_almacen=lambda usuario: AlmacenBaseDatos(bd, usuario),
                                 crear_publicador=lambda usuario: PublicadorDeUsuario(publicador, usuario),
-                                maximo_bots=config.max_bots)
+                                maximo_bots=config.max_bots, piloto=PilotoIA(ia, fuente, config.simbolo))
     # Cuando se cumple una alerta, le llega solo a su dueño por /api/stream.
     alertas = ServicioAlertas(bd, fuente, config.simbolo,
                               al_disparar=lambda a: publicador.publicar_a(a.usuario_id, "alerta", alerta_a_json(a)))
     return crear_app(config, fuente, publicador=publicador, cuentas=construir_cuentas(config, bd, hasher),
                      gestor=gestor, participantes=lambda precio: participantes_activos(bd, precio), alertas=alertas,
-                     externos=DatosExternos())
+                     externos=externos, ia=ia)
 
 
 def main() -> None:

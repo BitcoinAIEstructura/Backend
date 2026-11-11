@@ -18,7 +18,7 @@ from bitcoinai.estrategia import (
 from bitcoinai.estructuras import ListaDoble
 from bitcoinai.indicadores import PuntoIndicador, ResultadoCaida, Serie
 from bitcoinai.modelo import Vela
-from bitcoinai.simulacion import ConfiguracionBot, EstadoBot, EstadoCartera, Evento, Orden
+from bitcoinai.simulacion import ConfiguracionBot, ConsejoPiloto, EstadoBot, EstadoCartera, Evento, Orden
 
 
 def vela_a_json(vela: Vela) -> dict[str, Any]:
@@ -181,7 +181,15 @@ def configuracion_bot_a_json(c: ConfiguracionBot) -> dict[str, Any]:
     """La configuración del bot. Complejidad: O(1)."""
     return {"segundosEntreCiclos": c.segundos_entre_ciclos, "intervalo": c.intervalo,
             "cantidadVelas": c.cantidad_velas, "riesgo": c.riesgo, "stopLoss": c.stop_loss,
-            "takeProfit": c.take_profit}
+            "takeProfit": c.take_profit, "modo": c.modo}
+
+
+def consejo_a_json(c: ConsejoPiloto) -> dict[str, Any]:
+    """Lo que decidió el piloto IA. Complejidad: O(1)."""
+    return {"senal": c.senal, "probabilidad": c.probabilidad, "confianza": c.confianza,
+            "exactitud": c.exactitud, "base": c.base, "riesgo": c.riesgo, "stopLoss": c.stop_loss,
+            "takeProfit": c.take_profit, "volatilidad": c.volatilidad, "intervalo": c.intervalo,
+            "tiempoVela": c.tiempo_vela, "precio": c.precio, "motivo": c.motivo}
 
 
 def bot_a_json(e: EstadoBot) -> dict[str, Any]:
@@ -196,6 +204,8 @@ def bot_a_json(e: EstadoBot) -> dict[str, Any]:
         "ultimoError": e.ultimo_error,
         "encendidoDesde": e.encendido_desde,
         "enCiclo": e.en_ciclo,
+        "piloto": consejo_a_json(e.ultimo_consejo) if e.ultimo_consejo is not None else None,
+        "pilotoDisponible": e.piloto_disponible,
     }
 
 

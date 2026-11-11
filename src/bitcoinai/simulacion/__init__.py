@@ -5,8 +5,11 @@ from bitcoinai.simulacion.cartera import SALDO_INICIAL_POR_DEFECTO, Cartera, Eje
 from bitcoinai.simulacion.gestor import MAXIMO_BOTS_POR_DEFECTO, GestorSimulaciones, SimulacionUsuario
 from bitcoinai.simulacion.interfaces import (
     AlmacenSimulacion,
+    ConsejoPiloto,
     DatosCartera,
     EstadoSimulacion,
+    LimitesPiloto,
+    Piloto,
     PublicadorEventos,
     SinPublicar,
 )
@@ -32,6 +35,7 @@ __all__ = (
     "BotSimulado",
     "Cartera",
     "ConfiguracionBot",
+    "ConsejoPiloto",
     "DatosCartera",
     "Ejecucion",
     "EstadoBot",
@@ -41,10 +45,12 @@ __all__ = (
     "GestorSimulaciones",
     "Evento",
     "LibroDeOrdenes",
+    "LimitesPiloto",
     "OperacionInvalidaError",
     "OperacionRechazadaError",
     "Orden",
     "OrdenNoEncontradaError",
+    "Piloto",
     "PublicadorEventos",
     "SimulacionUsuario",
     "SinPublicar",

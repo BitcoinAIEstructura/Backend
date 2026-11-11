@@ -362,6 +362,11 @@ class LibroDeOrdenes:
                     resultado.agregar(orden)
             return resultado
 
+    @property
+    def comision(self) -> float:
+        """Fracción de comisión que cobra cada ejecución (0,001 = 0,1 %)."""
+        return self._comision
+
     def obtener(self, id_orden: int) -> Orden:
         """Una orden por id, en su estado actual. Complejidad: O(n + r).
 

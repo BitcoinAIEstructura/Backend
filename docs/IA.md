@@ -73,6 +73,22 @@ Además del precio, los modelos aprenden de tres fuentes públicas (sin cuentas 
 - **División en el tiempo:** se entrena con el 80 % más viejo y se prueba con el 20 % más reciente. Mezclar al azar sería trampa: el modelo vería días posteriores a los que después "predice".
 - **Métricas:** exactitud, base, ventaja sobre la base y precisión al decir "sube".
 
+## Piloto automático: «Piloto IA»
+
+`piloto.py` deja que el comité maneje el bot (`POST /api/bot/iniciar` con `"modo": "ia"`) y da el consejo de la IA que el frontend muestra en el panel, la cartera y las órdenes (`GET /api/ia/consejo`). Usa la misma predicción (y la misma caché) que `/api/ia/predicciones`: hay **un solo** `ServicioIA` para todo el servidor.
+
+En cada ciclo, con la probabilidad `p` de que suba la próxima vela:
+
+1. **Señal:** `p ≥ 55 %` → COMPRAR; `p ≤ 45 %` → VENDER; en medio, MANTENER (no hay ventaja clara).
+2. **Riesgo:** del tope del usuario usa `max(¼, min(1, 2,5 × confianza))`. Si en las velas de prueba el comité **no le ganó a la base**, usa la mitad: la IA es prudente cuando no ha demostrado nada.
+3. **Stop-loss y take-profit:** salen de la volatilidad (desviación típica de los rendimientos de las últimas 48 velas): stop-loss = 3 × volatilidad (mínimo 1 %) y take-profit = 2 × stop-loss (mínimo 2 %), sin pasar los topes del usuario.
+
+Con velas de 1 o 5 minutos usa las de 15 minutos, que son las más cortas que la IA sabe predecir. La decisión se explica en una frase que queda en el historial («El comité da 62 % de que sube la próxima vela de 1 hora; en velas que no vio acertó 55 % (la base, 51 %). Decisión: compra con 12 % del saldo, …»).
+
+### ¿Le habría ido bien siguiendo a la IA?
+
+Cada punto de `prueba` trae `rendimiento`, cuánto cambió el precio en la vela siguiente. Con eso el frontend dibuja qué habría pasado con 100 USDT teniendo BTC solo cuando el comité dice «sube» (pagando 0,1 % en cada cambio) frente a comprar y guardar. Es una prueba con datos que los modelos no vieron, y se muestra aunque la IA pierda.
+
 ## Servicio y API
 
 `ServicioIA` pide las últimas 1000 velas cerradas y las series externas, entrena, mide y predice. Los textos que muestra la página (qué hace cada modelo, el veredicto frente a la base, la conclusión sobre las fuentes externas y los nombres de los intervalos) salen de `textos.py`: el frontend solo los dibuja. Guarda el resultado de cada intervalo 10 minutos, porque entrenar con 1000 velas tarda unos 3 s. El endpoint es `GET /api/ia/predicciones` (ver [API.md](API.md)).

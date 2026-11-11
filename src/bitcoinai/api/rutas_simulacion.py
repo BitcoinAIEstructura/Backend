@@ -5,6 +5,8 @@
 - POST /api/ordenes/procesar, POST /api/ordenes/deshacer
 - GET /api/cartera, GET /api/historial?limite=50
 - POST /api/bot/iniciar, POST /api/bot/detener, GET /api/bot/estado
+- GET /api/estadisticas: operaciones cerradas, aciertos y actividad por día (para las gráficas)
+- GET /api/ia/consejo: qué recomienda la IA ahora, según la cartera del usuario
 
 Cada usuario tiene su propia simulación (cartera, órdenes, historial y bot): todos
 estos endpoints exigen sesión (401 sin ella) y trabajan sobre la del usuario.
@@ -13,6 +15,7 @@ Errores del dominio (ver ``errores.py``): orden inexistente → 404; operación 
 estado no permite → 409; datos inválidos → 400.
 """
 
+import time
 from typing import Any, Self
 
 from fastapi import APIRouter, Depends, Request
@@ -24,10 +27,22 @@ from bitcoinai.api.rutas_cuentas import Cookies, sesion_de
 from bitcoinai.api.serializacion import (
     bot_a_json,
     cartera_a_json,
+    consejo_a_json,
     evento_a_json,
     orden_a_json,
 )
-from bitcoinai.simulacion import ConfiguracionBot, EstadoOrden, GestorSimulaciones, LibroDeOrdenes, TipoOrden
+from bitcoinai.ia.piloto import consejo_para_usuario
+from bitcoinai.ia.servicio import DatosInsuficientesError
+from bitcoinai.simulacion import (
+    ConfiguracionBot,
+    EstadoOrden,
+    GestorSimulaciones,
+    LibroDeOrdenes,
+    LimitesPiloto,
+    Piloto,
+    TipoOrden,
+)
+from bitcoinai.simulacion.estadisticas import calcular
 from bitcoinai.usuarios.servicio import ServicioCuentas
 
 MONTO_MAXIMO = 1_000_000_000
@@ -80,9 +95,11 @@ class CuerpoBot(BaseModel):
     riesgo: float | None = None
     stop_loss: float | None = Field(None, alias="stopLoss")
     take_profit: float | None = Field(None, alias="takeProfit")
+    modo: str | None = None
 
 
-def crear_rutas_simulacion(gestor: GestorSimulaciones, cuentas: ServicioCuentas, config: Configuracion) -> APIRouter:
+def crear_rutas_simulacion(gestor: GestorSimulaciones, cuentas: ServicioCuentas, config: Configuracion,
+                           piloto: Piloto | None = None) -> APIRouter:
     """Crea el router con los endpoints de la simulación de cada usuario."""
     cookies = Cookies(config)
 
@@ -166,6 +183,43 @@ def crear_rutas_simulacion(gestor: GestorSimulaciones, cuentas: ServicioCuentas,
             raise ApiError(400, f"Parámetro 'limite' inválido: '{texto}'. "
                                 f"Debe ser un número entero entre 1 y {LIMITE_HISTORIAL_MAXIMO}")
         return {"eventos": [evento_a_json(e) for e in libro.historial(valor)]}
+
+    @rutas.get("/api/estadisticas")
+    def estadisticas(peticion: Request) -> dict[str, Any]:
+        """Lo que piden las gráficas del panel, calculado con las órdenes ejecutadas."""
+        libro = libro_de(peticion)
+        cartera_actual = libro.estado_cartera()
+        e = calcular(libro.ordenes(EstadoOrden.EJECUTADA), cartera_actual.saldo_inicial, libro.comision,
+                     int(time.time() * 1000))
+        return {
+            "operaciones": [{"idOrden": o.id_orden, "tiempo": o.tiempo, "ganancia": o.ganancia,
+                             "rentabilidad": o.rentabilidad, "origen": o.origen} for o in e.operaciones],
+            "actividad": [{"dia": a.dia, "compras": a.compras, "ventas": a.ventas, "volumen": a.volumen}
+                          for a in e.actividad],
+            "resumen": {
+                "cerradas": e.ganadoras + e.perdedoras, "ganadoras": e.ganadoras, "perdedoras": e.perdedoras,
+                "tasaAcierto": e.tasa_acierto, "gananciaPromedio": e.ganancia_promedio, "mejor": e.mejor,
+                "peor": e.peor, "volumenTotal": e.volumen_total,
+            },
+            "porOrigen": [{"origen": o, "ordenes": e.por_origen[o], "ganancia": e.ganancia_por_origen[o]}
+                          for o in e.por_origen],
+            "reparto": {"usdt": cartera_actual.saldo_usdt, "btc": cartera_actual.valor_btc},
+        }
+
+    @rutas.get("/api/ia/consejo")
+    def consejo(peticion: Request) -> dict[str, Any]:
+        """Qué haría la IA ahora con la cartera de quien pregunta (velas de 1 hora)."""
+        if piloto is None:
+            raise ApiError(503, "La IA no está disponible en este servidor")
+        libro = libro_de(peticion)
+        bot = gestor.bot(usuario_id(peticion)).estado().configuracion
+        try:
+            c = piloto.aconsejar("1h", LimitesPiloto(bot.riesgo, bot.stop_loss, bot.take_profit))
+        except DatosInsuficientesError as error:
+            raise ApiError(503, str(error)) from None
+        accion, titulo, texto = consejo_para_usuario(c, libro.estado_cartera(c.precio).btc > 0)
+        return {"accion": accion, "titulo": titulo, "texto": texto, "decision": consejo_a_json(c),
+                "aviso": "Es una simulación: la IA puede equivocarse y no es asesoría financiera."}
 
     @rutas.post("/api/bot/iniciar")
     def iniciar_bot(peticion: Request, cuerpo: CuerpoBot | None = None) -> dict[str, Any]:

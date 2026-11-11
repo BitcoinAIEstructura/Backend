@@ -394,7 +394,7 @@ Tres modelos hechos a mano y un comité dicen si la próxima vela cerrará más 
  "modelos":[{"nombre":"Regresión logística",…,"peso":0.31},{"nombre":"Árbol de decisión",…},{"nombre":"k vecinos",…}],
  "caracteristicas":[{"nombre":"Rendimiento de la última vela","valor":-0.0012},…],
  "arbol":{"hoja":false,"caracteristica":"RSI 14","umbral":31.9,"muestras":759,"probabilidad":0.51,"enCamino":true,"si":{…},"no":{…}},
- "prueba":[{"tiempo":1791140400000,"probabilidad":0.55,"subio":true},…],
+ "prueba":[{"tiempo":1791140400000,"probabilidad":0.55,"subio":true,"rendimiento":0.0031},…],
  "aviso":"Predicción hecha con datos reales del pasado. … No es asesoría financiera."}
 ```
 
@@ -487,6 +487,39 @@ Ejemplo real de una compra ya ejecutada:
  "detalle": "Compró 0.00602260 BTC a 82937.59 por 500.00 USDT (comisión 0.50 USDT)."}
 ```
 
+### Estadísticas: `GET /api/estadisticas`
+
+Lo que piden las gráficas del panel, calculado con las órdenes ejecutadas del usuario (se repiten sobre una cartera nueva, con la misma contabilidad que la real):
+
+```json
+{"operaciones": [{"idOrden": 4, "tiempo": 1792000000000, "ganancia": 45.2, "rentabilidad": 0.021, "origen": "ia"}, …],
+ "actividad": [{"dia": 1791954000000, "compras": 1, "ventas": 1, "volumen": 2100.5}, …],
+ "resumen": {"cerradas": 14, "ganadoras": 10, "perdedoras": 4, "tasaAcierto": 0.71, "gananciaPromedio": 12.4,
+             "mejor": 67.35, "peor": -58.58, "volumenTotal": 44699.1},
+ "porOrigen": [{"origen": "manual", "ordenes": 12, "ganancia": 23.68}, …],
+ "reparto": {"usdt": 8342.14, "btc": 1829.37}}
+```
+
+- **`operaciones`:** una por venta ejecutada, con lo que ganó o perdió frente al costo de ese BTC (comisiones incluidas).
+- **`actividad`:** los últimos 30 días (de medianoche a medianoche, hora de Bogotá), también los días sin órdenes.
+- **`origen`:** `manual`, `bot` (estrategia de reglas, stop-loss o take-profit) o `ia` (piloto IA). Sale del comienzo del `motivo` de la orden.
+- **`reparto`:** USDT y valor del BTC al precio actual.
+
+### Consejo de la IA: `GET /api/ia/consejo`
+
+Qué haría la IA ahora con la cartera de quien pregunta (velas de 1 hora). Exige sesión; `503` si el servidor no tiene IA o le faltan velas para entrenar.
+
+```json
+{"accion": "COMPRAR", "titulo": "La IA recomienda comprar",
+ "texto": "Ve 64 % de probabilidad de que suba en la próxima vela de 1 hora. Usaría 14 % de tu saldo, …",
+ "decision": {"senal": "COMPRAR", "probabilidad": 0.64, "confianza": 0.28, "exactitud": 0.55, "base": 0.51,
+              "riesgo": 0.14, "stopLoss": 0.015, "takeProfit": 0.03, "volatilidad": 0.005,
+              "intervalo": "1h", "tiempoVela": 1792000000000, "precio": 74528.35, "motivo": "El comité da 64 % …"},
+ "aviso": "Es una simulación: la IA puede equivocarse y no es asesoría financiera."}
+```
+
+`accion` tiene en cuenta la cartera: si la IA dice «comprar» y ya hay BTC, aconseja `MANTENER`; si dice «vender» y no hay BTC, `ESPERAR`. `decision` es exactamente lo que haría el piloto IA (ver [IA.md](IA.md#piloto-automático-piloto-ia)), con los topes de riesgo de la configuración del bot.
+
 ### Cartera e historial
 
 `GET /api/cartera` valora la cartera al precio actual. Ejemplo real, después de la compra anterior:
@@ -554,13 +587,13 @@ Exigen sesión. Cada usuario puede tener hasta 20 alertas activas.
 | --- | --- |
 | `POST /api/bot/iniciar` | Lo pone en marcha; el primer ciclo es inmediato. Cuerpo opcional (abajo). 409 si ya estaba en marcha |
 | `POST /api/bot/detener` | Lo detiene (si ya estaba detenido, no hace nada) |
-| `GET /api/bot/estado` | `{activo, estrategia, configuracion, ciclos, ultimoCiclo, ultimaDecision, ultimoError, encendidoDesde, enCiclo}`. `encendidoDesde` es cuándo se encendió (ms, `null` si está detenido) y `enCiclo` es `true` mientras revisa el mercado |
+| `GET /api/bot/estado` | `{activo, estrategia, configuracion, ciclos, ultimoCiclo, ultimaDecision, ultimoError, encendidoDesde, enCiclo, piloto, pilotoDisponible}`. `encendidoDesde` es cuándo se encendió (ms, `null` si está detenido) y `enCiclo` es `true` mientras revisa el mercado. En el modo `ia`, `estrategia` es `"piloto-ia"` y `piloto` trae lo que decidió la IA en su último ciclo (la misma forma que `decision` en el consejo); si no, `null`. `pilotoDisponible` dice si el servidor tiene la IA lista para manejar el bot |
 
 Cuerpo de `iniciar`; todos los campos son opcionales:
 
 ```json
 {"segundosEntreCiclos": 60, "intervalo": "1h", "cantidadVelas": 200,
- "riesgo": 0.2, "stopLoss": 0.05, "takeProfit": 0.10}
+ "riesgo": 0.2, "stopLoss": 0.05, "takeProfit": 0.10, "modo": "ia"}
 ```
 
 | Campo | Qué es | Rango |
@@ -571,10 +604,11 @@ Cuerpo de `iniciar`; todos los campos son opcionales:
 | `riesgo` | Fracción del saldo por compra | mayor que 0 y hasta 1 |
 | `stopLoss` | Caída desde el costo promedio que dispara la venta | entre 0 y 1, sin incluirlos |
 | `takeProfit` | Subida desde el costo promedio que dispara la venta | mayor que 0 y hasta 10 |
+| `modo` | Quién decide: `reglas` (estrategia combinada) o `ia` (piloto IA). En el modo `ia`, `riesgo`, `stopLoss` y `takeProfit` son **topes**: la IA elige en cada ciclo cuánto usar. `409` si el servidor no tiene piloto | `reglas` (por defecto) o `ia` |
 
 En cada ciclo el bot:
 1. Pide las velas cerradas más recientes y el precio actual.
-2. Consulta la estrategia combinada y anota su decisión con el motivo (`DECISION_BOT`).
+2. Consulta la estrategia combinada (o, en el modo `ia`, el comité de la IA, que además elige el riesgo, el stop-loss y el take-profit de ese ciclo) y anota su decisión con el motivo (`DECISION_BOT`). Las órdenes del piloto llevan un motivo que empieza por `piloto IA`.
 3. **Stop-loss y take-profit**, que tienen prioridad: con posición abierta, si el precio cayó `stopLoss` o más desde el costo promedio, o subió `takeProfit` o más, vende todo el BTC.
 4. Si no se activó ninguno: con COMPRAR y sin posición, compra por `riesgo` × saldo; con VENDER y con posición, vende todo.
 5. Procesa la cola de pendientes.

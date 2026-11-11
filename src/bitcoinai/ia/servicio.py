@@ -3,7 +3,7 @@
 import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from functools import partial
 
@@ -17,7 +17,7 @@ from bitcoinai.ia.evaluacion import Metricas, dividir_en_el_tiempo, evaluar, met
 from bitcoinai.ia.logistica import RegresionLogistica
 from bitcoinai.ia.vecinos import KVecinos
 from bitcoinai.mercado import FuenteDeMercado, velas_cerradas
-from bitcoinai.modelo import Intervalo
+from bitcoinai.modelo import Intervalo, Vela
 
 VELAS = 1000
 DURACION_CACHE_S = 600.0
@@ -35,6 +35,17 @@ def fabricas(nombres: tuple[str, ...]) -> tuple[Callable[[], Modelo], ...]:
 
 
 FABRICAS: tuple[Callable[[], Modelo], ...] = fabricas(NOMBRES)
+
+
+def rendimientos_siguientes(velas: Iterable[Vela]) -> dict[int, float]:
+    """``tiempo de apertura → cambio del cierre en la vela siguiente``. Complejidad: O(n)."""
+    resultado: dict[int, float] = {}
+    anterior: Vela | None = None
+    for vela in velas:
+        if anterior is not None and anterior.cierre > 0:
+            resultado[anterior.tiempo_apertura] = vela.cierre / anterior.cierre - 1
+        anterior = vela
+    return resultado
 
 
 class DatosInsuficientesError(ValueError):
@@ -66,6 +77,7 @@ class PuntoPrueba:
     tiempo: int
     probabilidad: float
     subio: bool
+    rendimiento: float = 0.0  # cuánto cambió el precio en la vela siguiente (0,01 = +1 %)
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,11 +155,12 @@ class ServicioIA:
                                            evaluar(modelo, prueba), peso),)
         # Las probabilidades del comité en la prueba se calculan una vez: sirven para sus
         # métricas y para la gráfica de aciertos.
+        siguiente = rendimientos_siguientes(velas)
         puntos: Lista[PuntoPrueba] = Lista()
         pares: Lista[tuple[float, int]] = Lista()
         for m in prueba:
             probabilidad = comite.probabilidad(m.caracteristicas)
-            puntos.agregar(PuntoPrueba(m.tiempo, probabilidad, bool(m.etiqueta)))
+            puntos.agregar(PuntoPrueba(m.tiempo, probabilidad, bool(m.etiqueta), siguiente.get(m.tiempo, 0.0)))
             pares.agregar((probabilidad, m.etiqueta))
         del_comite = ResultadoModelo(comite.nombre, comite.probabilidad(ultima), comite.explicar(ultima),
                                      metricas_de(pares))
