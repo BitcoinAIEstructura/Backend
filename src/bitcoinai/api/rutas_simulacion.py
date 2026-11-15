@@ -4,6 +4,7 @@
 - GET /api/ordenes/{id}, DELETE /api/ordenes/{id}
 - POST /api/ordenes/procesar, POST /api/ordenes/deshacer
 - GET /api/cartera, GET /api/historial?limite=50
+- GET /api/exportar/ordenes: el registro de órdenes en CSV, para abrirlo en una hoja de cálculo
 - POST /api/bot/iniciar, POST /api/bot/detener, GET /api/bot/estado
 - GET /api/estadisticas: operaciones cerradas, aciertos y actividad por día (para las gráficas)
 - GET /api/ia/consejo: qué recomienda la IA ahora, según la cartera del usuario
@@ -18,10 +19,11 @@ estado no permite → 409; datos inválidos → 400.
 import time
 from typing import Any, Self
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from bitcoinai.api.configuracion import Configuracion
+from bitcoinai.api.csv import contenido_descargable
 from bitcoinai.api.errores import ApiError
 from bitcoinai.api.rutas_cuentas import Cookies, sesion_de
 from bitcoinai.api.serializacion import (
@@ -183,6 +185,16 @@ def crear_rutas_simulacion(gestor: GestorSimulaciones, cuentas: ServicioCuentas,
             raise ApiError(400, f"Parámetro 'limite' inválido: '{texto}'. "
                                 f"Debe ser un número entero entre 1 y {LIMITE_HISTORIAL_MAXIMO}")
         return {"eventos": [evento_a_json(e) for e in libro.historial(valor)]}
+
+    @rutas.get("/api/exportar/ordenes")
+    def exportar_ordenes(peticion: Request) -> Response:
+        """El registro de órdenes de la persona, en CSV y como archivo descargable."""
+        libro = libro_de(peticion)
+        return Response(
+            content=contenido_descargable(libro.ordenes()),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="ordenes.csv"'},
+        )
 
     @rutas.get("/api/estadisticas")
     def estadisticas(peticion: Request) -> dict[str, Any]:
