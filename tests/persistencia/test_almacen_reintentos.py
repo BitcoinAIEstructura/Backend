@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 from bitcoinai.persistencia import CARTERA, ORDENES, AlmacenArchivos
-from bitcoinai.persistencia import almacen as modulo_almacen
 from tests.persistencia.test_almacen import estado_de_ejemplo
 
 
@@ -26,7 +25,7 @@ def test_reintenta_cuando_el_archivo_esta_ocupado(tmp_path: Path, monkeypatch: p
             raise PermissionError("otro programa tiene el archivo abierto")
         real(origen, destino)
 
-    monkeypatch.setattr(modulo_almacen.os, "replace", replace_que_se_bloquea)
+    monkeypatch.setattr(os, "replace", replace_que_se_bloquea)
     almacen = AlmacenArchivos(tmp_path)
     almacen.guardar(estado_de_ejemplo())
 
@@ -37,7 +36,7 @@ def test_reintenta_cuando_el_archivo_esta_ocupado(tmp_path: Path, monkeypatch: p
 
 def test_si_el_archivo_sigue_ocupado_el_error_se_propaga(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(modulo_almacen.os, "replace",
+    monkeypatch.setattr(os, "replace",
                         lambda *_: (_ for _ in ()).throw(PermissionError("siempre ocupado")))
     with pytest.raises(PermissionError):
         AlmacenArchivos(tmp_path).guardar(estado_de_ejemplo())
@@ -63,7 +62,7 @@ def test_si_el_archivo_danado_no_se_puede_apartar_se_sigue_adelante(
     def no_se_puede_mover(*_: object) -> None:
         raise OSError("permiso denegado")
 
-    monkeypatch.setattr(modulo_almacen.os, "replace", no_se_puede_mover)
+    monkeypatch.setattr(os, "replace", no_se_puede_mover)
     cargado = almacen.cargar()
 
     assert cargado is not None

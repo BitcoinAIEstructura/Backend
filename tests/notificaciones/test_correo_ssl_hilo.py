@@ -7,12 +7,12 @@
 
 import logging
 import smtplib
+import threading
 from typing import Any
 
 import pytest
 
 from bitcoinai.notificaciones import BuzonMemoria, CorreoSmtp, DatosSmtp
-from bitcoinai.notificaciones import correo as modulo_correo
 from bitcoinai.notificaciones.plantillas import codigo_verificacion
 
 
@@ -65,16 +65,20 @@ def test_enviar_no_bloquea_y_usa_un_hilo(monkeypatch: pytest.MonkeyPatch) -> Non
             registro = creados[-1]
             registro["target"](*registro["args"])
 
-    monkeypatch.setattr(modulo_correo.threading, "Thread", HiloFalso)
+    monkeypatch.setattr(threading, "Thread", HiloFalso)
     enviador = CorreoSmtp(DatosSmtp("smtp.gmail.com", 587, "g@gmail.com", "secreta", "g@gmail.com"))
     enviados: list[Any] = []
-    enviador.enviar_ahora = enviados.append  # type: ignore[method-assign]
+
+    def registrador(mensaje: Any) -> None:
+        enviados.append(mensaje)
+
+    monkeypatch.setattr(enviador, "enviar_ahora", registrador)
     mensaje = codigo_verificacion("ana@correo.co", "Ana", "123456", 15)
 
     enviador.enviar(mensaje)
 
     assert enviados == [mensaje]
-    assert creados == [{"target": enviador.enviar_ahora, "args": (mensaje,), "name": "correo", "daemon": True}]
+    assert creados == [{"target": registrador, "args": (mensaje,), "name": "correo", "daemon": True}]
 
 
 def test_una_caida_de_red_no_lanza_y_se_registra_por_su_tipo(

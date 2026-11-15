@@ -5,8 +5,8 @@ decisión: si una serie todavía no tiene puntos (calentamiento), su clave no de
 aparecer, para que el frontend no reciba un valor inventado.
 """
 
-from bitcoinai.estructuras import ListaDoble
 from bitcoinai.estrategia import apoyo
+from bitcoinai.estructuras import ListaDoble
 from bitcoinai.indicadores.base import PuntoIndicador
 
 

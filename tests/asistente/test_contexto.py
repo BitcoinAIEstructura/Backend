@@ -7,11 +7,11 @@ verifica el contenido exacto de cada línea.
 """
 
 from bitcoinai.asistente import DatosUsuario
-from bitcoinai.asistente.contexto import ORDENES_RECIENTES, armar_contexto
 from bitcoinai.asistente.asistente import decimal, usdt
+from bitcoinai.asistente.contexto import ORDENES_RECIENTES, armar_contexto
 from bitcoinai.estrategia import Decision, Senal
 from bitcoinai.estructuras import Lista
-from bitcoinai.simulacion import ConsejoPiloto, ConfiguracionBot, EstadoBot, EstadoOrden, Orden, TipoOrden
+from bitcoinai.simulacion import ConfiguracionBot, ConsejoPiloto, EstadoOrden, Orden, TipoOrden
 from tests.asistente.test_asistente import bot, cartera, datos
 
 

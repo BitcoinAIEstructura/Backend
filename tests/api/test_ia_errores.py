@@ -7,13 +7,14 @@
 """
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
 
 from bitcoinai.api import Configuracion, crear_app
-from bitcoinai.ia.servicio import DatosInsuficientesError
+from bitcoinai.externos import DatosExternos
+from bitcoinai.ia.servicio import DatosInsuficientesError, ServicioIA
 from bitcoinai.mercado import MercadoError
 
 
@@ -52,7 +53,8 @@ class ExternosFalsos:
 
 @pytest.fixture
 def cliente() -> TestClient:
-    return TestClient(crear_app(Configuracion(), FuenteSinPrecio(), ia=IASinDatos(), externos=ExternosFalsos()))
+    return TestClient(crear_app(Configuracion(), FuenteSinPrecio(), ia=cast(ServicioIA, IASinDatos()),
+                               externos=cast(DatosExternos, ExternosFalsos())))
 
 
 def test_sin_velas_suficientes_responde_503(cliente: TestClient) -> None:
@@ -71,7 +73,7 @@ def test_fuentes_sin_precio_igual_responde_el_panorama(cliente: TestClient) -> N
 
 
 def test_sin_fuentes_externas_devuelve_listas_vacias() -> None:
-    app = crear_app(Configuracion(), FuenteSinPrecio(), ia=IASinDatos())
+    app = crear_app(Configuracion(), FuenteSinPrecio(), ia=cast(ServicioIA, IASinDatos()))
     r = TestClient(app).get("/api/ia/fuentes")
     assert r.status_code == 200
     assert r.json() == {"lecturas": [], "errores": [], "actualizadoEn": None}
