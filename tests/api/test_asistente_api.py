@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from bitcoinai.api import Configuracion, crear_app
 from bitcoinai.mercado import MercadoError
-from bitcoinai.simulacion import GestorSimulaciones
+from bitcoinai.simulacion import ConsejoPiloto, GestorSimulaciones, LimitesPiloto
 from tests.api.test_simulacion_api import post, registrado
 from tests.apoyo.fuente_falsa import FuenteFalsa
 from tests.usuarios.entorno import crear_entorno
@@ -127,3 +127,47 @@ def test_el_historial_se_valida(fuente: FuenteFalsa, gestor: GestorSimulaciones)
     c = registrado(app_con_claude(fuente, gestor, ClienteClaudeFalso()))
     largo = c.post("/api/asistente", json={"mensaje": "hola", "historial": [{"rol": "usuario", "texto": "x" * 2000}]})
     assert largo.status_code == 400
+
+
+class PilotoQueFalla:
+    """El piloto no puede decidir (por ejemplo, sin velas): el chat sigue con las reglas."""
+
+    def aconsejar(self, intervalo: str, limites: LimitesPiloto) -> ConsejoPiloto:
+        raise MercadoError("sin velas suficientes")
+
+
+class PilotoFijo:
+    """Devuelve siempre el mismo consejo, para verlo en el contexto de Claude."""
+
+    def aconsejar(self, intervalo: str, limites: LimitesPiloto) -> ConsejoPiloto:
+        return ConsejoPiloto(senal="MANTENER", probabilidad=0.5, confianza=0.0, exactitud=0.52, base=0.51,
+                             riesgo=0.2, stop_loss=0.05, take_profit=0.1, volatilidad=0.01,
+                             intervalo=intervalo, tiempo_vela=1, precio=100.0, motivo="sin ventaja clara")
+
+
+def test_si_el_piloto_falla_claude_responde_sin_el_consejo(fuente: FuenteFalsa) -> None:
+    cliente = ClienteClaudeFalso()
+    gestor = GestorSimulaciones(fuente, "BTCUSDT", piloto=PilotoQueFalla())
+    c = registrado(app_con_claude(fuente, gestor, cliente))
+
+    r = c.post("/api/asistente", json={"mensaje": "¿qué hago?"})
+
+    assert r.status_code == 200 and r.json()["fuente"] == "ia"
+    mensajes = cliente.pedidos[0]["messages"]
+    assert isinstance(mensajes, list)
+    ultimo = str(mensajes[-1]["content"])
+    assert "Cartera: vale" in ultimo  # los datos de práctica siguen ahí
+    assert "Consejo actual de la IA" not in ultimo  # pero sin inventar un consejo
+
+
+def test_el_consejo_del_piloto_viaja_en_el_contexto(fuente: FuenteFalsa) -> None:
+    cliente = ClienteClaudeFalso()
+    gestor = GestorSimulaciones(fuente, "BTCUSDT", piloto=PilotoFijo())
+    c = registrado(app_con_claude(fuente, gestor, cliente))
+
+    assert c.post("/api/asistente", json={"mensaje": "¿qué hago?"}).status_code == 200
+
+    mensajes = cliente.pedidos[0]["messages"]
+    assert isinstance(mensajes, list)
+    ultimo = str(mensajes[-1]["content"])
+    assert "Consejo actual de la IA (velas de 1h): MANTENER" in ultimo
