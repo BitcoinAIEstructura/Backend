@@ -1,15 +1,30 @@
 """La cuenta de demostración, con velas sintéticas y una base en memoria."""
 
 import math
+import random
 import time
+from types import SimpleNamespace
 
 import pytest
 
-from bitcoinai.demo import CORREO, HORA_MS, VelaSimple, crear_demo, generar_contrasena
+import bitcoinai.demo as modulo_demo
+from bitcoinai.api import Configuracion
+from bitcoinai.demo import (
+    CORREO,
+    HORA_MS,
+    SEMILLA,
+    VELAS,
+    VelaSimple,
+    construir_historia,
+    crear_demo,
+    generar_contrasena,
+    velas_reales,
+)
 from bitcoinai.persistencia import AlmacenBaseDatos
 from bitcoinai.seguridad.cifrado import Cifrador
-from bitcoinai.simulacion import Cartera, EstadoOrden
+from bitcoinai.simulacion import Cartera, EstadoOrden, TipoEvento
 from bitcoinai.simulacion.estadisticas import calcular
+from bitcoinai.usuarios.modelo import DatosRegistro
 from tests.usuarios.entorno import CLIENTE, crear_entorno
 
 
@@ -17,6 +32,17 @@ def velas_sinteticas(n: int = 1000) -> tuple[VelaSimple, ...]:
     ahora = int(time.time() * 1000) // HORA_MS * HORA_MS
     return tuple(VelaSimple(ahora - (n - i) * HORA_MS, p, p * 1.004, p * 0.996)
                  for i in range(n) for p in (95_000 + 4_000 * math.sin(i / 37) + 1_500 * math.sin(i / 5),))
+
+
+def velas_con_caidas() -> tuple[VelaSimple, ...]:
+    """Caminata aleatoria (semilla fija) con caídas fuertes: así aparece un stop-loss del bot."""
+    azar = random.Random(1)
+    ahora = int(time.time() * 1000) // HORA_MS * HORA_MS
+    precio, velas = 90_000.0, []
+    for i in range(VELAS):
+        precio *= math.exp(azar.gauss(0, 0.012))
+        velas.append(VelaSimple(ahora - (VELAS - i) * HORA_MS, precio, precio * 1.004, precio * 0.996))
+    return tuple(velas)
 
 
 def test_crea_la_cuenta_con_historial_coherente() -> None:
@@ -55,3 +81,79 @@ def test_crea_la_cuenta_con_historial_coherente() -> None:
     # Volver a crearla reemplaza la anterior (no se duplica).
     crear_demo(entorno.bd, Cifrador(bytes(32)), velas_sinteticas(), generar_contrasena())
     assert entorno.bd.una("SELECT COUNT(*) AS n FROM usuarios")["n"] == 1  # type: ignore[index]
+
+
+def test_la_historia_cubre_unos_cuarenta_dias() -> None:
+    historia = construir_historia(velas_sinteticas(), random.Random(SEMILLA))
+    ordenes = list(historia.registro)
+    dias = (ordenes[-1].creada_en - ordenes[0].creada_en) / (24 * HORA_MS)
+    assert 39 <= dias <= 43
+
+
+def test_la_historia_es_reproducible_con_la_misma_semilla() -> None:
+    velas = velas_sinteticas()
+    una = construir_historia(velas, random.Random(SEMILLA))
+    otra = construir_historia(velas, random.Random(SEMILLA))
+
+    # Misma semilla, mismas órdenes y mismos eventos (los tiempos de ejecución no se comparan).
+    assert [(o.id, o.tipo, o.estado, o.motivo, o.detalle) for o in una.registro] == \
+           [(o.id, o.tipo, o.estado, o.motivo, o.detalle) for o in otra.registro]
+    assert [(e.tipo, e.descripcion) for e in una.eventos] == \
+           [(e.tipo, e.descripcion) for e in otra.eventos]
+
+
+def test_velas_reales_lee_las_velas_de_binance(monkeypatch: pytest.MonkeyPatch) -> None:
+    class ClienteFalso:
+        def __init__(self, url: str) -> None:
+            assert url == Configuracion().url_base_binance
+
+        def obtener_velas(self, simbolo: str, intervalo: object, limite: int) -> list[object]:
+            assert (simbolo, limite) == ("BTCUSDT", VELAS)
+            return [SimpleNamespace(tiempo_apertura=1, cierre=2.0, maximo=3.0, minimo=1.0)]
+
+    monkeypatch.setattr(modulo_demo, "ClienteBinance", ClienteFalso)
+    assert velas_reales(Configuracion()) == (VelaSimple(1, 2.0, 3.0, 1.0),)
+
+
+def test_sin_internet_usa_una_serie_sintetica(monkeypatch: pytest.MonkeyPatch,
+                                              capsys: pytest.CaptureFixture[str]) -> None:
+    class SinRed:
+        def __init__(self, url: str) -> None:
+            pass
+
+        def obtener_velas(self, *_: object) -> list[object]:
+            raise OSError("sin red")
+
+    monkeypatch.setattr(modulo_demo, "ClienteBinance", SinRed)
+    velas = velas_reales(Configuracion())
+
+    assert len(velas) == VELAS
+    assert all(v.maximo >= v.cierre >= v.minimo > 0 for v in velas)
+    assert [b.tiempo - a.tiempo for a, b in zip(velas, velas[1:], strict=False)] == [HORA_MS] * (VELAS - 1)
+    assert "serie sintética" in capsys.readouterr().out
+
+
+def test_generar_contrasena_reintenta_si_la_primera_no_cumple(monkeypatch: pytest.MonkeyPatch) -> None:
+    intentos: list[str] = []
+    real = DatosRegistro.validar
+
+    def validar(*args: str) -> object:
+        intentos.append(args[-1])
+        if len(intentos) == 1:
+            raise ValueError("no cumple la política")
+        return real(*args)
+
+    monkeypatch.setattr(DatosRegistro, "validar", staticmethod(validar))
+    contrasena = generar_contrasena()
+
+    assert len(intentos) == 2 and contrasena == intentos[-1]
+
+
+def test_la_etapa_del_bot_registra_un_stop_loss() -> None:
+    historia = construir_historia(velas_con_caidas(), random.Random(1))
+
+    stops = [o for o in historia.registro
+             if o.estado is EstadoOrden.EJECUTADA and o.motivo.startswith("stop-loss")]
+    assert stops, "una caminata con caídas fuertes debería cortar una pérdida del bot"
+    assert any(e.tipo is TipoEvento.STOP_LOSS and e.descripcion.startswith("El bot vende todo")
+               for e in historia.eventos)
