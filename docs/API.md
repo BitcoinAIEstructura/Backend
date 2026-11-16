@@ -544,6 +544,21 @@ Tipos de evento:
 | Órdenes | `ORDEN_CREADA`, `ORDEN_EJECUTADA`, `ORDEN_CANCELADA`, `ORDEN_DESHECHA`, `ORDEN_RECHAZADA` |
 | Bot | `DECISION_BOT`, `STOP_LOSS`, `TAKE_PROFIT`, `BOT_INICIADO`, `BOT_DETENIDO`, `ERROR_BOT` |
 
+### Exportar las órdenes: `GET /api/exportar/ordenes`
+
+El registro de órdenes de la persona en CSV, para abrirlo en una hoja de cálculo. Exige sesión y cada usuario exporta solo lo suyo.
+
+- Responde `text/csv; charset=utf-8` con `Content-Disposition: attachment; filename="ordenes.csv"`, así que el navegador lo descarga.
+- Empieza con **BOM** (`\ufeff`) para que Excel en Windows muestre bien los acentos.
+- Columnas: `id,tipo,estado,monto,todo,creadaEn,ejecutadaEn,precioEjecucion,cantidadBtc,comision,motivo,detalle`.
+- Las celdas con comas, comillas o saltos de línea van entrecomilladas según el formato CSV; al leerlas vuelven intactas.
+- Un texto que empieza por `=`, `+`, `-`, `@`, tabulador o retorno de carro lleva un apóstrofo delante: una hoja de cálculo lo trata como texto y no como fórmula (CSV injection).
+
+```csv
+id,tipo,estado,monto,todo,creadaEn,ejecutadaEn,precioEjecucion,cantidadBtc,comision,motivo,detalle
+1,COMPRA,EJECUTADA,500.0,false,1791819000000,1791819015000,60000.0,0.008317,0.5,manual,"Compró 0.00831700 BTC a 60000.00 por 500.00 USDT (comisión 0.50 USDT)."
+```
+
 ### Liga de inversores: `GET /api/liga`
 
 Los 10 usuarios con mejor rentabilidad y tu puesto. Exige sesión.

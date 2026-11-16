@@ -164,6 +164,7 @@ Detalle, parámetros y ejemplos en [docs/API.md](docs/API.md).
 | `POST /api/ordenes/deshacer` | Deshace la última orden creada si sigue pendiente |
 | `GET /api/cartera` | Cartera simulada valorada al precio actual |
 | `GET /api/historial?limite=50` | Historial de eventos, el más reciente primero |
+| `GET /api/exportar/ordenes` | El registro de órdenes en CSV, como archivo descargable |
 | `POST /api/bot/iniciar` | Pone en marcha el bot simulado (configuración opcional en el cuerpo) |
 | `POST /api/bot/detener` | Detiene el bot |
 | `GET /api/bot/estado` | Estado del bot y su última decisión |
