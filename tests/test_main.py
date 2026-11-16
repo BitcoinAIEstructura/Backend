@@ -1,11 +1,14 @@
+import logging
 import os
 import re
 from email import message_from_bytes, policy
 from pathlib import Path
 
 import pytest
+import uvicorn
 from fastapi.testclient import TestClient
 
+import bitcoinai.__main__ as modulo_main
 from bitcoinai.__main__ import cargar_env, construir
 from bitcoinai.api import Configuracion
 from bitcoinai.api.publicador import Publicador
@@ -85,3 +88,33 @@ def test_cargar_env_lee_el_archivo_sin_pisar_el_entorno(tmp_path: Path, monkeypa
     finally:  # que no les llegue a las demás pruebas
         os.environ.pop("SMTP_USUARIO", None)
         os.environ.pop("SMTP_CONTRASENA", None)
+
+
+def test_main_lee_el_entorno_y_arranca_uvicorn(monkeypatch: pytest.MonkeyPatch,
+                                               caplog: pytest.LogCaptureFixture) -> None:
+    config = Configuracion(puerto=9099)
+    aplicacion = object()
+    arranques: list[tuple[object, dict[str, object]]] = []
+
+    monkeypatch.setattr(modulo_main, "cargar_env", lambda: 3)
+    monkeypatch.setattr(Configuracion, "desde_entorno", classmethod(lambda cls: config))
+    monkeypatch.setattr(modulo_main, "construir", lambda _config, hasher=None: aplicacion)
+
+    def run_falso(app: object, **opciones: object) -> None:
+        arranques.append((app, opciones))
+
+    monkeypatch.setattr(uvicorn, "run", run_falso)
+    caplog.set_level(logging.INFO, logger="bitcoinai")
+
+    modulo_main.main()
+
+    assert arranques == [(aplicacion, {
+        "host": "0.0.0.0",
+        "port": 9099,
+        "access_log": False,
+        "log_level": "warning",
+        "timeout_graceful_shutdown": 3,
+    })]
+    assert "Variables leídas de .env: 3" in caplog.text
+    assert "Backend iniciado en http://0.0.0.0:9099" in caplog.text
+    assert "(símbolo BTCUSDT" in caplog.text
