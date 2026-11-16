@@ -12,6 +12,7 @@ import uvicorn
 
 from bitcoinai.api import Configuracion, crear_app
 from bitcoinai.api.publicador import Publicador, PublicadorDeUsuario
+from bitcoinai.api.rutas_cuentas import Cookies
 from bitcoinai.simulacion import GestorSimulaciones
 from tests.api.test_cuentas_api import REGISTRO
 from tests.apoyo.fuente_falsa import FuenteFalsa
@@ -139,3 +140,15 @@ def test_las_ordenes_de_un_usuario_no_le_llegan_a_otro(servidor: Servidor) -> No
                 assert linea in ("", ": conectado", ": latido")
             orden = json.loads(next(lineas).removeprefix("data: "))
             assert orden["monto"] == 7  # la primera que le llega es la suya, no la de Ana
+
+
+def test_una_sesion_vencida_recibe_solo_lo_publico(servidor: Servidor) -> None:
+    """Un token que ya no vale no debe tumbar el stream: se sigue como visitante."""
+    nombre = Cookies(Configuracion()).sesion
+    with httpx.Client(base_url=servidor.url, timeout=5, cookies={nombre: "token-vencido"}) as cliente:
+        assert cliente.post("/api/ordenes", json={"tipo": "COMPRA", "monto": 500}).status_code == 401
+        with cliente.stream("GET", "/api/stream") as r:
+            assert r.status_code == 200
+            lineas = r.iter_lines()
+            assert next(lineas) == "retry: 5000"
+            assert next(lineas) == ": conectado"
