@@ -2,13 +2,16 @@
 
 import math
 import random
+import sys
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 import bitcoinai.demo as modulo_demo
 from bitcoinai.api import Configuracion
+from bitcoinai.basedatos import BaseDatos
 from bitcoinai.demo import (
     CORREO,
     HORA_MS,
@@ -18,6 +21,7 @@ from bitcoinai.demo import (
     construir_historia,
     crear_demo,
     generar_contrasena,
+    guardar_credenciales,
     velas_reales,
 )
 from bitcoinai.persistencia import AlmacenBaseDatos
@@ -157,3 +161,41 @@ def test_la_etapa_del_bot_registra_un_stop_loss() -> None:
     assert stops, "una caminata con caídas fuertes debería cortar una pérdida del bot"
     assert any(e.tipo is TipoEvento.STOP_LOSS and e.descripcion.startswith("El bot vende todo")
                for e in historia.eventos)
+
+
+def test_guardar_credenciales_deja_un_archivo_para_la_persona(tmp_path: Path) -> None:
+    archivo = tmp_path / "credenciales.md"
+    contrasena = "NxAbCdEfGhIjKl#7"
+
+    guardar_credenciales(archivo, contrasena)
+
+    texto = archivo.read_text(encoding="utf-8")
+    assert f"- Correo: `{CORREO}`" in texto
+    assert f"- Contraseña: `{contrasena}`" in texto
+    assert "Jonathan Mideros" in texto
+    assert "no lo subas a GitHub" in texto
+    assert "http://localhost:3000/iniciar-sesion" in texto
+
+
+def test_main_crea_la_cuenta_y_guarda_la_contrasena(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                    capsys: pytest.CaptureFixture[str]) -> None:
+    class SinRed:
+        def __init__(self, url: str) -> None:
+            pass
+
+        def obtener_velas(self, *_: object) -> list[object]:
+            raise OSError("sin internet")
+
+    monkeypatch.chdir(tmp_path)  # sin .env del proyecto
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "datos"))
+    monkeypatch.delenv("BASE_DATOS", raising=False)
+    monkeypatch.setattr(sys, "argv", ["bitcoinai.demo", "--guardar-en", str(tmp_path / "credenciales.md")])
+    monkeypatch.setattr(modulo_demo, "ClienteBinance", SinRed)
+
+    modulo_demo.main()
+
+    assert "Cuenta de demostración lista" in capsys.readouterr().out
+    texto = (tmp_path / "credenciales.md").read_text(encoding="utf-8")
+    assert CORREO in texto
+    bd = BaseDatos(tmp_path / "datos" / "bitcoinai.db")
+    assert bd.una("SELECT COUNT(*) AS n FROM usuarios")["n"] == 1  # type: ignore[index]
