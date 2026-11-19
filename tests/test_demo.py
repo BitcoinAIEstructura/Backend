@@ -199,3 +199,38 @@ def test_main_crea_la_cuenta_y_guarda_la_contrasena(tmp_path: Path, monkeypatch:
     assert CORREO in texto
     bd = BaseDatos(tmp_path / "datos" / "bitcoinai.db")
     assert bd.una("SELECT COUNT(*) AS n FROM usuarios")["n"] == 1  # type: ignore[index]
+
+def test_main_con_correo_y_contrasena_del_entorno_no_la_muestra(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                              capsys: pytest.CaptureFixture[str]) -> None:
+    class SinRed:
+        def __init__(self, url: str) -> None:
+            pass
+
+        def obtener_velas(self, *_: object) -> list[object]:
+            raise OSError("sin internet")
+
+    secreta = "Ejemplo#Demo2026x"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "datos"))
+    monkeypatch.delenv("BASE_DATOS", raising=False)
+    monkeypatch.setenv("DEMO_CONTRASENA", secreta)
+    monkeypatch.setattr(sys, "argv", ["bitcoinai.demo", "--contrasena-del-entorno", "--correo", "Jona@Correo.co"])
+    monkeypatch.setattr(modulo_demo, "ClienteBinance", SinRed)
+
+    modulo_demo.main()
+
+    salida = capsys.readouterr().out
+    assert "jona@correo.co" in salida and secreta not in salida
+    assert not list(tmp_path.glob("*.md"))  # no escribe la contraseña en ningún archivo
+    bd = BaseDatos(tmp_path / "datos" / "bitcoinai.db")
+    assert bd.una("SELECT COUNT(*) AS n FROM usuarios")["n"] == 1  # type: ignore[index]
+
+
+def test_contrasena_del_entorno_falta_o_no_cumple(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEMO_CONTRASENA", raising=False)
+    with pytest.raises(SystemExit, match="Falta la variable"):
+        modulo_demo.contrasena_del_entorno("a@b.co")
+    monkeypatch.setenv("DEMO_CONTRASENA", "corta")
+    with pytest.raises(SystemExit) as error:
+        modulo_demo.contrasena_del_entorno("a@b.co")
+    assert "corta" not in str(error.value)

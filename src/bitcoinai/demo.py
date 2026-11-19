@@ -8,11 +8,15 @@ hay internet, una serie sintética. Las decisiones son inventadas para la demost
 no salen de correr la IA en el pasado.
 
 La contraseña se genera al azar y se escribe solo en el archivo de ``--guardar-en``
-(nunca en la consola ni en el registro). Todo es simulado: no hay dinero real.
+(nunca en la consola ni en el registro). En un servidor (por ejemplo Railway) se usa
+``--contrasena-del-entorno``: la contraseña la elige la persona en la variable
+``DEMO_CONTRASENA`` y el script nunca la muestra. ``--correo`` cambia el correo de la cuenta
+(por defecto uno del dominio reservado ``.test``). Todo es simulado: no hay dinero real.
 """
 
 import argparse
 import math
+import os
 import random
 import secrets
 import string
@@ -302,17 +306,18 @@ def _ordenar(eventos: Lista[Evento]) -> Lista[Evento]:
     return ordenados
 
 
-def crear_demo(bd: BaseDatos, cifrador: Cifrador, velas: tuple[VelaSimple, ...], contrasena: str) -> int:
+def crear_demo(bd: BaseDatos, cifrador: Cifrador, velas: tuple[VelaSimple, ...], contrasena: str,
+               correo: str = CORREO) -> int:
     """Borra la cuenta de demostración si existía y la crea de nuevo con su historial. Devuelve su id."""
     azar = random.Random(SEMILLA)
     random.seed(SEMILLA)
     primera = velas[0].tiempo
     creado = primera - 26 * HORA_MS
     repo = RepositorioUsuarios(bd, cifrador, reloj=lambda: creado)
-    existente = repo.credenciales_por_correo(CORREO)
+    existente = repo.credenciales_por_correo(correo)
     if existente is not None:
         bd.ejecutar("DELETE FROM usuarios WHERE id = ?", (existente.usuario_id,))
-    datos = DatosRegistro.validar(NOMBRE, APELLIDO, CORREO, "CC", DOCUMENTO, TELEFONO, contrasena)
+    datos = DatosRegistro.validar(NOMBRE, APELLIDO, correo, "CC", DOCUMENTO, TELEFONO, contrasena)
     usuario = repo.crear(datos, HashContrasenas().calcular(contrasena), correo_verificado=True)
     uid = usuario.id
 
@@ -354,13 +359,14 @@ def crear_demo(bd: BaseDatos, cifrador: Cifrador, velas: tuple[VelaSimple, ...],
     return uid
 
 
-def guardar_credenciales(ruta: Path, contrasena: str) -> None:
+def guardar_credenciales(ruta: Path, contrasena: str, correo: str = CORREO) -> None:
     ruta.write_text(
         "# Cuenta de demostración de Nexabit (solo local)\n\n"
         "Creada con `python -m bitcoinai.demo` en la carpeta `Backend`. Este archivo no está en ningún\n"
         "repositorio: no lo subas a GitHub.\n\n"
         f"- Nombre: {NOMBRE} {APELLIDO}\n"
-        f"- Correo: `{CORREO}` (dominio reservado .test: no recibe correos de verdad)\n"
+        f"- Correo: `{correo}`"
+        + (" (dominio reservado .test: no recibe correos de verdad)" if correo == CORREO else "") + "\n"
         f"- Contraseña: `{contrasena}`\n\n"
         "Entra en http://localhost:3000/iniciar-sesion. La cuenta ya tiene el correo confirmado y no usa\n"
         "verificación en dos pasos. Si vuelves a correr el script, la cuenta se recrea con otra contraseña.\n\n"
@@ -371,19 +377,47 @@ def guardar_credenciales(ruta: Path, contrasena: str) -> None:
         encoding="utf-8")
 
 
+VARIABLE_CONTRASENA = "DEMO_CONTRASENA"
+
+
+def contrasena_del_entorno(correo: str) -> str:
+    """La contraseña de ``DEMO_CONTRASENA``, revisada con la política del registro.
+
+    Raises:
+        SystemExit: si falta o no cumple la política (el mensaje nunca incluye la contraseña).
+    """
+    contrasena = os.environ.get(VARIABLE_CONTRASENA, "")
+    if not contrasena:
+        raise SystemExit(f"Falta la variable {VARIABLE_CONTRASENA} con la contraseña de la cuenta.")
+    try:
+        DatosRegistro.validar(NOMBRE, APELLIDO, correo, "CC", DOCUMENTO, TELEFONO, contrasena)
+    except ValueError as error:
+        raise SystemExit(f"{VARIABLE_CONTRASENA} no sirve: {error}") from None
+    return contrasena
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Crea la cuenta de demostración de Jonathan Mideros.")
-    parser.add_argument("--guardar-en", required=True, type=Path,
-                        help="archivo donde se escriben el correo y la contraseña (fuera de git)")
+    destino = parser.add_mutually_exclusive_group(required=True)
+    destino.add_argument("--guardar-en", type=Path,
+                         help="genera una contraseña y la escribe en este archivo (fuera de git)")
+    destino.add_argument("--contrasena-del-entorno", action="store_true",
+                         help=f"usa la contraseña de la variable {VARIABLE_CONTRASENA} (no la muestra)")
+    parser.add_argument("--correo", default=CORREO, help=f"correo de la cuenta (por defecto {CORREO})")
     args = parser.parse_args()
     cargar_env()
+    correo = args.correo.strip().lower()
+    contrasena = contrasena_del_entorno(correo) if args.contrasena_del_entorno else generar_contrasena()
     config = Configuracion.desde_entorno()
     bd = abrir_base_datos(config)
     velas = velas_reales(config)
-    contrasena = generar_contrasena()
-    uid = crear_demo(bd, Cifrador(cargar_clave(config.data_dir)), velas, contrasena)
-    guardar_credenciales(args.guardar_en, contrasena)
-    print(f"Cuenta de demostración lista (usuario #{uid}, {CORREO}). Contraseña guardada en {args.guardar_en}.")
+    uid = crear_demo(bd, Cifrador(cargar_clave(config.data_dir)), velas, contrasena, correo)
+    if args.guardar_en is not None:
+        guardar_credenciales(args.guardar_en, contrasena, correo)
+        print(f"Cuenta de demostración lista (usuario #{uid}, {correo}). Contraseña guardada en {args.guardar_en}.")
+    else:
+        print(f"Cuenta de demostración lista (usuario #{uid}, {correo}), con la contraseña de "
+              f"{VARIABLE_CONTRASENA}. Ya puedes borrar esa variable.")
 
 
 if __name__ == "__main__":
