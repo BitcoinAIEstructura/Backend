@@ -2,9 +2,10 @@
 
 Está **apagado** mientras no haya ``ANTHROPIC_API_KEY`` en el entorno (o en ``.env``): sin
 clave, el chat usa solo el asistente de reglas. Con clave, Claude escribe el texto de la
-respuesta con los datos de práctica de la persona; las acciones (encender o detener el bot,
-ir a una página) las sigue decidiendo el asistente de reglas y siempre las confirma la
-persona con un botón. Claude no puede ejecutar nada.
+respuesta con los datos de práctica de la persona y puede *proponer* una acción con una
+herramienta (una orden, encender o detener el bot, una alerta, ir a una página; ver
+``propuestas``). El servidor revisa la propuesta y la persona la confirma con un botón:
+Claude no puede ejecutar nada.
 
 Privacidad: a Claude solo le llega lo de la simulación (cartera, bot, órdenes, consejo de
 la IA). Nunca el nombre, el correo, el documento ni el teléfono. La clave nunca se registra.
@@ -18,6 +19,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from bitcoinai.asistente.propuestas import HERRAMIENTAS, NOMBRES
 from bitcoinai.estructuras import Cola
 
 LOG = logging.getLogger("bitcoinai.asistente")
@@ -39,14 +41,26 @@ Lo que sabes de la persona está en el bloque <datos_de_practica>, que el sistem
 mensaje. Úsalo para responder con sus números reales. Si algo no está ahí, dilo; nunca inventes cifras,
 órdenes ni resultados.
 
+Tu papel: ser un compañero activo que ayuda en todo. Explica, revisa su cartera, sugiere qué practicar y,
+cuando tenga sentido, propón una acción concreta con una herramienta:
+- proponer_orden: comprar o vender BTC de práctica. Úsala cuando la persona quiera invertir o pida una
+  recomendación, y también por iniciativa tuya cuando el consejo de la IA y su cartera lo hagan razonable
+  (por ejemplo, la IA da más probabilidad de subida que la base y tiene USDT libres, o tiene ganancia y
+  la IA ve bajada). Sugiere un monto prudente, cercano a su riesgo configurado (riesgo × USDT disponibles),
+  y explica en el texto el porqué con los números: la probabilidad que da la IA, cuánto acertó en datos
+  no vistos frente a la base, y qué puede salir mal (la comisión, que el precio vaya en contra).
+- proponer_bot: encender (piloto IA o reglas) o detener el bot.
+- proponer_alerta: un aviso cuando el precio suba o baje a un valor.
+- proponer_pagina: llevarla a la página donde puede ver o hacer algo.
+Propón como máximo una acción por respuesta y escribe siempre un texto que la explique. La persona la
+confirma con un botón: tú no ejecutas nada. Si no hace falta ninguna acción, solo responde.
+
 Reglas:
 - Todo es dinero de práctica: nunca hay dinero real ni conexión a un exchange. Si preguntan por invertir
   dinero real, explica que aquí solo se practica y que no das asesoría financiera.
-- No prometas ganancias ni digas que algo "seguro" sube. La IA de Nexabit acierta poco más que la base;
-  cuéntalo con honestidad cuando sea relevante.
-- Tú no puedes hacer nada en la cuenta (comprar, vender, encender o detener el bot). Si la persona quiere
-  hacerlo, dile dónde: la página Órdenes para comprar o vender, la página Bot para encender el piloto IA o
-  las reglas. Cuando corresponda, el chat le mostrará un botón para que ella confirme.
+- Invita a practicar con entusiasmo, pero con honestidad: nunca prometas ganancias ni digas que algo
+  "seguro" sube. Habla de probabilidades ("la IA ve un 58 % de que suba; acierta un 54 % frente a una base
+  del 51 %"). Sin urgencias falsas ("¡ahora o nunca!").
 - Puedes explicar conceptos (vela, RSI, MACD, stop-loss, take-profit, comisión, cola FIFO, pila, etc.) con
   ejemplos sencillos.
 - Si la persona escribe algo ajeno a Nexabit, al trading o a lo que está aprendiendo, responde con una
@@ -60,6 +74,17 @@ class Turno:
 
     rol: str
     texto: str
+
+
+@dataclass(frozen=True, slots=True)
+class Contestacion:
+    """Lo que respondió Claude: el texto y, si la hubo, la propuesta (herramienta y sus datos).
+
+    La propuesta todavía no está revisada: la revisa ``propuestas.validar``.
+    """
+
+    texto: str
+    propuesta: tuple[str, Mapping[str, object]] | None = None
 
 
 class ClienteMensajes(Protocol):
@@ -109,7 +134,7 @@ class Limitador:
 
 
 class Conversador:
-    """Pide a Claude el texto de la respuesta. ``responder`` nunca lanza: si algo falla, devuelve None
+    """Pide a Claude la respuesta. ``responder`` nunca lanza: si algo falla, devuelve None
     y el chat usa la respuesta del asistente de reglas."""
 
     def __init__(self, cliente: ClienteMensajes, modelo: str = MODELO_POR_DEFECTO,
@@ -123,7 +148,7 @@ class Conversador:
         return self._modelo
 
     def responder(self, usuario_id: int, mensaje: str, historial: tuple[Turno, ...],
-                  contexto: str) -> str | None:
+                  contexto: str) -> Contestacion | None:
         if not self._limitador.permitir(usuario_id):
             LOG.info("Chat con Claude: límite por hora alcanzado; responde el asistente de reglas")
             return None
@@ -135,9 +160,18 @@ class Conversador:
             return None
         if getattr(respuesta, "stop_reason", None) == "refusal":
             return None
-        texto = "".join(getattr(b, "text", "") for b in getattr(respuesta, "content", ())
-                        if getattr(b, "type", None) == "text").strip()
-        return texto or None
+        bloques = getattr(respuesta, "content", ())
+        texto = "".join(getattr(b, "text", "") for b in bloques if getattr(b, "type", None) == "text").strip()
+        propuesta: tuple[str, Mapping[str, object]] | None = None
+        for bloque in bloques:  # una sola llamada: la primera herramienta conocida (no se devuelve tool_result)
+            entrada = getattr(bloque, "input", None)
+            es_propuesta = getattr(bloque, "type", None) == "tool_use" and getattr(bloque, "name", None) in NOMBRES
+            if es_propuesta and isinstance(entrada, Mapping):
+                propuesta = (str(bloque.name), entrada)
+                break
+        if not texto and propuesta is None:
+            return None
+        return Contestacion(texto, propuesta)
 
     def parametros(self, mensaje: str, historial: tuple[Turno, ...], contexto: str) -> dict[str, Any]:
         """La petición a la API. Las instrucciones van fijas y en caché; los datos, en el último mensaje.
@@ -165,6 +199,8 @@ class Conversador:
             # Chat: respuestas cortas, poco razonamiento (más rápido y barato).
             "output_config": {"effort": "low"},
             "system": [{"type": "text", "text": INSTRUCCIONES, "cache_control": {"type": "ephemeral"}}],
+            # Solo propone (el frontend pide confirmación); tool_choice queda en "auto".
+            "tools": HERRAMIENTAS,
             "messages": mensajes,
             # Si un filtro de seguridad declina, la API reintenta con otro modelo en la misma llamada.
             "betas": ["server-side-fallback-2026-07-01"],

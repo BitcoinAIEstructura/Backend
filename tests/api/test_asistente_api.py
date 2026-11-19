@@ -44,7 +44,8 @@ def test_responde_con_los_datos_de_la_persona(app: FastAPI) -> None:
     assert list(cuerpo) == ["intencion", "respuesta", "accion", "sugerencias", "fuente"]
     assert cuerpo["fuente"] == "reglas"  # sin ANTHROPIC_API_KEY, solo reglas
     assert cuerpo["intencion"] == "ordenes" and "1 orden espera" in cuerpo["respuesta"]
-    assert cuerpo["accion"] == {"tipo": "IR", "etiqueta": "Ir a Órdenes", "ruta": "/ordenes"}
+    assert cuerpo["accion"] == {"tipo": "IR", "etiqueta": "Ir a Órdenes", "ruta": "/ordenes",
+                                "orden": None, "alerta": None, "modo": None}
     assert len(cuerpo["sugerencias"]) >= 2
 
 
@@ -77,8 +78,9 @@ def test_mensajes_invalidos(app: FastAPI, cuerpo: str, fragmento: str) -> None:
 
 
 class ClienteClaudeFalso:
-    def __init__(self, falla: bool = False) -> None:
-        self.falla = falla
+    def __init__(self, falla: bool = False, herramienta: tuple[str, dict[str, object]] | None = None,
+                 texto: str = "Con 10.000 USDT de práctica…") -> None:
+        self.falla, self.herramienta, self.texto = falla, herramienta, texto
         self.pedidos: list[dict[str, object]] = []
 
     def crear(self, **parametros: object) -> object:
@@ -87,8 +89,11 @@ class ClienteClaudeFalso:
         self.pedidos.append(parametros)
         if self.falla:
             raise RuntimeError("sin red")
-        return SimpleNamespace(stop_reason="end_turn",
-                               content=[SimpleNamespace(type="text", text="Con 10.000 USDT de práctica…")])
+        bloques = [SimpleNamespace(type="text", text=self.texto)] if self.texto else []
+        if self.herramienta is not None:
+            bloques.append(SimpleNamespace(type="tool_use", id="t1", name=self.herramienta[0],
+                                           input=self.herramienta[1]))
+        return SimpleNamespace(stop_reason="tool_use" if self.herramienta else "end_turn", content=bloques)
 
 
 def app_con_claude(fuente: FuenteFalsa, gestor: GestorSimulaciones, cliente: ClienteClaudeFalso) -> FastAPI:
@@ -171,3 +176,34 @@ def test_el_consejo_del_piloto_viaja_en_el_contexto(fuente: FuenteFalsa) -> None
     assert isinstance(mensajes, list)
     ultimo = str(mensajes[-1]["content"])
     assert "Consejo actual de la IA (velas de 1h): MANTENER" in ultimo
+
+
+def test_una_propuesta_valida_de_claude_reemplaza_la_accion(fuente: FuenteFalsa, gestor: GestorSimulaciones) -> None:
+    cliente = ClienteClaudeFalso(herramienta=("proponer_orden", {"tipo": "COMPRA", "monto_usdt": 2000.129,
+                                                                  "vender_todo": False}),
+                                 texto="La IA ve más subida que la base; ¿pruebas con 2.000 USDT?")
+    c = registrado(app_con_claude(fuente, gestor, cliente))
+    cuerpo = c.post("/api/asistente", json={"mensaje": "¿qué me recomiendas?"}).json()
+    assert cuerpo["fuente"] == "ia"
+    assert cuerpo["accion"] == {"tipo": "ORDEN", "etiqueta": "Comprar 2.000,12 USDT de BTC", "ruta": None,
+                                "orden": {"tipo": "COMPRA", "monto": 2000.12, "todo": False},
+                                "alerta": None, "modo": None}
+    assert cliente.pedidos[0]["tools"]  # Claude recibe las herramientas
+    # Proponer no ejecuta nada: no hay órdenes.
+    assert c.get("/api/ordenes").json()["cantidad"] == 0
+
+
+def test_una_propuesta_que_no_alcanza_se_descarta(fuente: FuenteFalsa, gestor: GestorSimulaciones) -> None:
+    cliente = ClienteClaudeFalso(herramienta=("proponer_orden", {"tipo": "COMPRA", "monto_usdt": 50_000,
+                                                                  "vender_todo": False}))
+    c = registrado(app_con_claude(fuente, gestor, cliente))
+    cuerpo = c.post("/api/asistente", json={"mensaje": "hola"}).json()
+    assert cuerpo["fuente"] == "ia" and cuerpo["accion"] is None
+
+
+def test_solo_la_herramienta_sin_texto_igual_responde(fuente: FuenteFalsa, gestor: GestorSimulaciones) -> None:
+    cliente = ClienteClaudeFalso(herramienta=("proponer_pagina", {"pagina": "ia"}), texto="")
+    c = registrado(app_con_claude(fuente, gestor, cliente))
+    cuerpo = c.post("/api/asistente", json={"mensaje": "¿dónde veo la IA?"}).json()
+    assert cuerpo["fuente"] == "ia" and "confírmalo" in cuerpo["respuesta"]
+    assert cuerpo["accion"]["tipo"] == "IR" and cuerpo["accion"]["ruta"] == "/ia"

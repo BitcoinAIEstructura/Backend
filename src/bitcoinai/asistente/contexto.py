@@ -35,6 +35,7 @@ def armar_contexto(datos: DatosUsuario, ordenes: Lista[Orden], consejo: ConsejoP
     lineas.agregar(f"Bot: {estado}, modo {modo}, velas de {b.configuracion.intervalo}, riesgo "
                    f"{_porcentaje(b.configuracion.riesgo, 0)}, stop-loss {_porcentaje(b.configuracion.stop_loss)}, "
                    f"take-profit {_porcentaje(b.configuracion.take_profit)}; revisó el mercado {b.ciclos} veces.")
+    lineas.agregar("Piloto IA disponible en el servidor: " + ("sí." if b.piloto_disponible else "no."))
     if b.ultima_decision is not None:
         d = b.ultima_decision
         lineas.agregar(f"Última decisión del bot: {d.senal.name} (confianza {decimal(d.confianza)}): {d.motivo}")

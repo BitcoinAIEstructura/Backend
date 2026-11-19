@@ -640,16 +640,24 @@ Responde preguntas sencillas con los datos de esa persona: qué hace el bot y cu
 {
   "intencion": "iniciar-bot",
   "respuesta": "¿Me enciendo? Revisaré el mercado cada minuto y usaré el 20 % de tus USDT en cada compra. …",
-  "accion": {"tipo": "INICIAR_BOT", "etiqueta": "Sí, enciéndete", "ruta": null},
+  "accion": {"tipo": "INICIAR_BOT", "etiqueta": "Sí, enciéndete", "ruta": null,
+             "orden": null, "alerta": null, "modo": null},
   "sugerencias": ["¿Qué estás haciendo?", "Detente"],
   "fuente": "reglas"
 }
 ```
 
-**Con Claude (opcional).** Si el servidor tiene `ANTHROPIC_API_KEY` (en el entorno o en `.env`), Claude (por defecto `claude-sonnet-5-5`, o el de `ASISTENTE_MODELO`) escribe el texto de `respuesta` con los datos de práctica de la persona (cartera, bot, órdenes recientes y consejo de la IA) y los últimos 10 mensajes del `historial`; entonces `fuente` es `"ia"`. Sin clave, si Claude falla o si la persona pasa de 30 mensajes por hora, responde el asistente de reglas (`fuente`: `"reglas"`). `accion` y `sugerencias` siempre salen del asistente de reglas: Claude no puede encender, detener ni operar nada.
+**Con Claude (opcional).** Si el servidor tiene `ANTHROPIC_API_KEY` (en el entorno o en `.env`), Claude (por defecto `claude-sonnet-5-5`, o el de `ASISTENTE_MODELO`) escribe el texto de `respuesta` con los datos de práctica de la persona (cartera, bot, órdenes recientes y consejo de la IA) y los últimos 10 mensajes del `historial`; entonces `fuente` es `"ia"`. Sin clave, si Claude falla o si la persona pasa de 30 mensajes por hora, responde el asistente de reglas (`fuente`: `"reglas"`). `sugerencias` siempre salen del asistente de reglas.
+
+**Propuestas de la IA.** Claude tiene cuatro herramientas para *proponer* (nunca ejecutar): `proponer_orden` (compra o venta de práctica), `proponer_bot` (encender con piloto IA o reglas, o detener), `proponer_alerta` y `proponer_pagina`. El servidor revisa la propuesta con los datos reales (el monto entre 1 USDT y lo disponible —USDT libres en una compra, valor del BTC en una venta—, que el bot no esté ya en ese estado, que el piloto exista, que la alerta quede por encima o por debajo del precio, que la página exista) y, si pasa, la devuelve en `accion` en lugar de la del asistente de reglas. La etiqueta del botón la escribe el servidor. Si no pasa, se descarta y queda la acción de las reglas (o `null`). Ejemplo:
+
+```json
+"accion": {"tipo": "ORDEN", "etiqueta": "Comprar 2.000,00 USDT de BTC", "ruta": null,
+           "orden": {"tipo": "COMPRA", "monto": 2000.0, "todo": false}, "alerta": null, "modo": null}
+```
 
 - `intencion`: `saludo`, `gracias`, `ayuda`, `estado-bot`, `iniciar-bot`, `detener-bot`, `por-que`, `ganancia`, `precio`, `ordenes`, `ia`, `concepto:<id>` o `no-entendi`.
-- `accion` (o `null`): `INICIAR_BOT`, `DETENER_BOT` o `IR` (con `ruta`). **El asistente nunca enciende ni detiene el bot por su cuenta**: el frontend muestra la acción como un botón y, si la persona lo toca, llama a `POST /api/bot/iniciar` o `/api/bot/detener`.
+- `accion` (o `null`): `INICIAR_BOT` (con `modo` `"ia"`, `"reglas"` o `null` para la configuración actual), `DETENER_BOT`, `IR` (con `ruta`), `ORDEN` (con `orden`: `tipo`, `monto` en USDT o `todo`) o `ALERTA` (con `alerta`: `tipo` y `precio`). **El asistente nunca hace nada por su cuenta**: el frontend muestra la acción como un botón y, si la persona lo toca, llama a `POST /api/bot/iniciar`, `/api/bot/detener`, `/api/ordenes` (y `/api/ordenes/procesar` si la cola estaba vacía) o `/api/alertas`.
 - Si no hay precio (Binance no responde), igual contesta lo del bot y avisa que no pudo valorar la cartera.
 
 ### Probar con curl

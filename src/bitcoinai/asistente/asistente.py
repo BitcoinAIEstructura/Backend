@@ -34,12 +34,33 @@ class Voto:
 
 
 @dataclass(frozen=True, slots=True)
-class Accion:
-    """Algo que la persona puede hacer con un toque: encender o detener el bot, o ir a una página."""
+class OrdenPropuesta:
+    """Una orden que la IA propone: ``tipo`` "COMPRA" o "VENTA", ``monto`` en USDT o ``todo`` (venta)."""
 
-    tipo: str  # "INICIAR_BOT", "DETENER_BOT" o "IR"
+    tipo: str
+    monto: float | None
+    todo: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class AlertaPropuesta:
+    """Una alerta de precio que la IA propone: ``tipo`` "SUBE_A" o "BAJA_A"."""
+
+    tipo: str
+    precio: float
+
+
+@dataclass(frozen=True, slots=True)
+class Accion:
+    """Algo que la persona puede hacer con un toque: encender o detener el bot, ir a una página,
+    hacer una orden o crear una alerta. Nunca se hace sola: el frontend la muestra como botón."""
+
+    tipo: str  # "INICIAR_BOT", "DETENER_BOT", "IR", "ORDEN" o "ALERTA"
     etiqueta: str
     ruta: str | None = None
+    orden: OrdenPropuesta | None = None
+    alerta: AlertaPropuesta | None = None
+    modo: str | None = None  # al encender: "ia" o "reglas" (None: la configuración actual)
 
 
 @dataclass(frozen=True, slots=True)

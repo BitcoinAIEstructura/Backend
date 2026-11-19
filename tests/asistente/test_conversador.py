@@ -45,7 +45,8 @@ def test_arma_la_peticion_con_instrucciones_en_cache_y_datos_en_el_ultimo_mensaj
     cliente = ClienteFalso()
     c = Conversador(cliente)
     historial = (Turno("bot", "¡Hola!"), Turno("usuario", "¿Cómo voy?"), Turno("bot", "Vas bien."))
-    assert c.responder(1, "Quiero invertir", historial, "Cartera: vale 10.186,13 USDT.") == "Tienes 8.342,14 USDT."
+    r = c.responder(1, "Quiero invertir", historial, "Cartera: vale 10.186,13 USDT.")
+    assert r is not None and r.texto == "Tienes 8.342,14 USDT." and r.propuesta is None
     p = cliente.pedidos[0]
     assert p["model"] == "claude-sonnet-5-5" and p["output_config"] == {"effort": "low"}
     assert p["system"][0]["text"] == INSTRUCCIONES and p["system"][0]["cache_control"] == {"type": "ephemeral"}
@@ -55,6 +56,9 @@ def test_arma_la_peticion_con_instrucciones_en_cache_y_datos_en_el_ultimo_mensaj
     ultimo = p["messages"][-1]["content"]
     assert "<datos_de_practica>" in ultimo and ultimo.endswith("Quiero invertir")
     assert "temperature" not in p and "thinking" not in p
+    assert {h["name"] for h in p["tools"]} == {"proponer_orden", "proponer_bot", "proponer_alerta", "proponer_pagina"}
+    assert all(h["strict"] and h["input_schema"]["additionalProperties"] is False for h in p["tools"])
+    assert "tool_choice" not in p  # Sonnet 5.5 no acepta forzar herramientas: queda en auto
 
 
 @pytest.mark.parametrize("cliente", [ClienteFalso(error=RuntimeError("sin red")), ClienteFalso(stop_reason="refusal"),
@@ -72,3 +76,14 @@ def test_limite_por_hora_por_persona() -> None:
     assert c.responder(2, "a", (), "d") is not None  # otra persona tiene su propio cupo
     reloj.t = 3600
     assert c.responder(1, "d", (), "d") is not None
+
+
+def test_devuelve_la_primera_herramienta_conocida() -> None:
+    respuesta = SimpleNamespace(stop_reason="tool_use", content=[
+        SimpleNamespace(type="text", text="Podrías probar."),
+        SimpleNamespace(type="tool_use", id="a", name="borrar_todo", input={}),
+        SimpleNamespace(type="tool_use", id="b", name="proponer_alerta", input={"tipo": "SUBE_A", "precio": 1.0})])
+    cliente = SimpleNamespace(crear=lambda **_: respuesta)
+    r = Conversador(cliente).responder(1, "hola", (), "d")
+    assert r is not None and r.texto == "Podrías probar."
+    assert r.propuesta == ("proponer_alerta", {"tipo": "SUBE_A", "precio": 1.0})
