@@ -1,6 +1,9 @@
-"""Envío de correos: por SMTP (Gmail u otro), a una carpeta local o a la memoria (pruebas).
+"""Envío de correos: por la API web de Brevo, por SMTP (Gmail u otro), a una carpeta local o a
+la memoria (pruebas).
 
-La contraseña SMTP se lee del entorno aquí mismo y no se guarda en ``Configuracion``,
+Brevo va por HTTPS (puerto 443): sirve donde el SMTP está bloqueado, como en el plan Hobby de
+Railway, que cierra los puertos 25, 465, 587 y 2525. La clave de Brevo y la contraseña SMTP
+se leen del entorno aquí mismo y no se guardan en ``Configuracion``,
 para que nunca aparezca en registros ni en mensajes de error. Del correo enviado solo
 se registra que se envió (nunca el destinatario ni el contenido: el código es secreto).
 """
@@ -19,6 +22,8 @@ from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 from pathlib import Path
 from typing import Protocol
+
+import httpx
 
 from bitcoinai.estructuras import Lista
 
@@ -154,6 +159,77 @@ class CorreoSmtp:
         return True
 
 
+URL_BREVO = "https://api.brevo.com/v3/smtp/email"
+
+
+@dataclass(frozen=True)
+class DatosBrevo:
+    """Cuenta de Brevo. ``repr`` no muestra la clave."""
+
+    clave: str = field(repr=False)
+    remitente: str
+
+    @classmethod
+    def desde_entorno(cls, entorno: Mapping[str, str] | None = None) -> DatosBrevo | None:
+        """``BREVO_API_KEY`` y el remitente: ``CORREO_REMITENTE`` o, si falta, ``SMTP_USUARIO``.
+
+        El remitente tiene que estar verificado en Brevo (Senders). Sin clave o sin remitente
+        devuelve None.
+        """
+        variables = os.environ if entorno is None else entorno
+        clave = variables.get("BREVO_API_KEY", "").strip()
+        remitente = variables.get("CORREO_REMITENTE", "").strip() or variables.get("SMTP_USUARIO", "").strip()
+        return cls(clave, remitente) if clave and remitente else None
+
+
+class CorreoBrevo:
+    """Envía con la API transaccional de Brevo (HTTPS), en un hilo aparte, como ``CorreoSmtp``."""
+
+    def __init__(self, datos: DatosBrevo, espera_s: float = 20, cliente: httpx.Client | None = None) -> None:
+        self._datos = datos
+        self._espera_s = espera_s
+        self._cliente = cliente
+
+    def descripcion(self) -> str:
+        return f"Brevo (API por HTTPS) desde {self._datos.remitente} hacia el correo de cada persona que se registra"
+
+    def enviar(self, mensaje: MensajeCorreo) -> None:
+        threading.Thread(target=self.enviar_ahora, args=(mensaje,), name="correo", daemon=True).start()
+
+    def enviar_ahora(self, mensaje: MensajeCorreo) -> bool:
+        """Envía y espera. Devuelve si se pudo (nunca lanza excepciones)."""
+        cuerpo = {
+            "sender": {"name": NOMBRE_REMITENTE, "email": self._datos.remitente},
+            "to": [{"email": mensaje.destino}],
+            "subject": mensaje.asunto,
+            "htmlContent": mensaje.html,
+            "textContent": mensaje.texto,
+        }
+        encabezados = {"api-key": self._datos.clave, "accept": "application/json"}
+        try:
+            if self._cliente is not None:
+                respuesta = self._cliente.post(URL_BREVO, json=cuerpo, headers=encabezados)
+            else:
+                respuesta = httpx.post(URL_BREVO, json=cuerpo, headers=encabezados, timeout=self._espera_s)
+        except httpx.HTTPError as error:
+            LOG.error("No se pudo enviar un correo: %s al llamar a Brevo", type(error).__name__)
+            return False
+        if respuesta.status_code in (401, 403):
+            LOG.error("No se pudo enviar un correo: Brevo rechazó la clave (revisa BREVO_API_KEY) "
+                      "o el remitente no está verificado en Brevo (Senders)")
+            return False
+        if respuesta.status_code == 429:
+            LOG.error("No se pudo enviar un correo: se llegó al límite de envíos de Brevo "
+                      "(300 al día en el plan gratis)")
+            return False
+        if respuesta.status_code >= 400:
+            # El cuerpo de error de Brevo no trae datos personales, pero puede citar el destinatario: no se registra.
+            LOG.error("No se pudo enviar un correo: Brevo respondió %d", respuesta.status_code)
+            return False
+        LOG.info("Correo enviado")
+        return True
+
+
 class BuzonLocal:
     """Para desarrollo sin SMTP: cada correo se guarda como archivo .eml en una carpeta.
 
@@ -191,7 +267,11 @@ class BuzonMemoria:
 
 
 def enviador_desde_entorno(data_dir: str, entorno: Mapping[str, str] | None = None) -> EnviadorCorreo:
-    """SMTP si están ``SMTP_USUARIO`` y ``SMTP_CONTRASENA``; si no, la carpeta ``<DATA_DIR>/correos``."""
+    """Brevo si está ``BREVO_API_KEY``; si no, SMTP si están ``SMTP_USUARIO`` y ``SMTP_CONTRASENA``;
+    si no, la carpeta ``<DATA_DIR>/correos``."""
+    brevo = DatosBrevo.desde_entorno(entorno)
+    if brevo is not None:
+        return CorreoBrevo(brevo)
     datos = DatosSmtp.desde_entorno(entorno)
     if datos is not None:
         if datos.host == "smtp.gmail.com" and datos.remitente.lower() != datos.usuario.lower():

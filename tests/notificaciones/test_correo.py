@@ -1,13 +1,15 @@
+import json
 import logging
 import smtplib
 from email import message_from_bytes, policy
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from bitcoinai.notificaciones import BuzonLocal, BuzonMemoria, CorreoSmtp, DatosSmtp, enviador_desde_entorno
-from bitcoinai.notificaciones.correo import armar
+from bitcoinai.notificaciones.correo import URL_BREVO, CorreoBrevo, DatosBrevo, MensajeCorreo, armar
 from bitcoinai.notificaciones.plantillas import codigo_verificacion
 
 
@@ -124,3 +126,55 @@ def test_errores_al_enviar_se_explican_sin_datos_personales(monkeypatch: pytest.
     assert enviador.enviar_ahora(codigo_verificacion("nadie@correo.co", "Ana", "654321", 15)) is False
     assert esperado in caplog.text
     assert "nadie@correo.co" not in caplog.text and "654321" not in caplog.text
+
+
+# ---------- Brevo (API por HTTPS): con un transporte falso, nunca se llama a Brevo ----------
+
+
+def _brevo(estado: int, pedidos: list[httpx.Request]) -> CorreoBrevo:
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        pedidos.append(peticion)
+        return httpx.Response(estado, json={"messageId": "<1@brevo>"} if estado < 400 else {"code": "x"})
+
+    cliente = httpx.Client(transport=httpx.MockTransport(responder))
+    return CorreoBrevo(DatosBrevo("clave-secreta", "nexabit@correo.co"), cliente=cliente)
+
+
+def test_brevo_desde_el_entorno_y_tiene_prioridad(tmp_path: Path) -> None:
+    assert DatosBrevo.desde_entorno({}) is None
+    assert DatosBrevo.desde_entorno({"BREVO_API_KEY": "k"}) is None  # falta el remitente
+    datos = DatosBrevo.desde_entorno({"BREVO_API_KEY": " k ", "SMTP_USUARIO": "yo@gmail.com"})
+    assert datos is not None and datos.remitente == "yo@gmail.com" and "k" not in repr(datos)
+    entorno = {"BREVO_API_KEY": "k", "CORREO_REMITENTE": "otro@correo.co", "SMTP_USUARIO": "yo@gmail.com",
+               "SMTP_CONTRASENA": "abcd efgh ijkl mnop"}
+    enviador = enviador_desde_entorno(str(tmp_path), entorno)
+    assert isinstance(enviador, CorreoBrevo) and "otro@correo.co" in enviador.descripcion()
+
+
+def test_brevo_envia_el_correo_por_https() -> None:
+    pedidos: list[httpx.Request] = []
+    assert _brevo(201, pedidos).enviar_ahora(MensajeCorreo("ana@correo.co", "Tu código", "123456", "<b>123456</b>"))
+    peticion = pedidos[0]
+    assert str(peticion.url) == URL_BREVO and peticion.headers["api-key"] == "clave-secreta"
+    cuerpo = json.loads(peticion.content)
+    assert cuerpo["to"] == [{"email": "ana@correo.co"}] and cuerpo["sender"]["email"] == "nexabit@correo.co"
+    assert cuerpo["htmlContent"] == "<b>123456</b>" and cuerpo["textContent"] == "123456"
+
+
+@pytest.mark.parametrize(("estado", "fragmento"), [(401, "BREVO_API_KEY"), (429, "límite"), (400, "respondió 400")])
+def test_brevo_errores_sin_datos_personales(estado: int, fragmento: str, caplog: pytest.LogCaptureFixture) -> None:
+    pedidos: list[httpx.Request] = []
+    with caplog.at_level("ERROR"):
+        assert not _brevo(estado, pedidos).enviar_ahora(MensajeCorreo("ana@correo.co", "Código 123456", "t", "h"))
+    assert fragmento in caplog.text
+    assert "ana@correo.co" not in caplog.text and "123456" not in caplog.text and "clave-secreta" not in caplog.text
+
+
+def test_brevo_sin_red_no_lanza(caplog: pytest.LogCaptureFixture) -> None:
+    def falla(_: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("sin red")
+
+    enviador = CorreoBrevo(DatosBrevo("k", "a@b.co"), cliente=httpx.Client(transport=httpx.MockTransport(falla)))
+    with caplog.at_level("ERROR"):
+        assert not enviador.enviar_ahora(MensajeCorreo("x@y.co", "a", "b", "c"))
+    assert "ConnectError" in caplog.text

@@ -87,6 +87,9 @@ Ninguna es obligatoria. La única secreta es `CLAVE_CIFRADO`. Hay un ejemplo com
 | `CLAVE_CIFRADO` | (se genera una local) | **Secreta.** 32 bytes en base64 para cifrar los datos personales. Si falta, se crea `data/clave-cifrado.key`. |
 | `COOKIE_SEGURA` | `false` | `true` con HTTPS: cookie `Secure` con prefijo `__Host-` y HSTS. |
 | `CONFIAR_PROXY` | `false` | `true` detrás del proxy de Railway, para leer la IP real. |
+| `BREVO_API_KEY` | — | **Secreta.** Clave de la API de Brevo para enviar los códigos por HTTPS. Tiene prioridad sobre SMTP. Úsala en Railway: el plan Hobby bloquea el SMTP (puertos 25, 465, 587 y 2525). |
+| `CORREO_REMITENTE` | `SMTP_USUARIO` | Correo que envía los códigos; con Brevo debe estar verificado en *Senders*. |
+| `SMTP_USUARIO` / `SMTP_CONTRASENA` | — | Gmail y su contraseña de aplicación, para enviar por SMTP (en tu computador). Sin Brevo ni SMTP, los correos se guardan en `<DATA_DIR>/correos`. |
 
 Si una variable tiene un valor inválido, el servidor no arranca y explica cuál es el problema.
 
