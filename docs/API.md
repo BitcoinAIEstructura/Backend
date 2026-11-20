@@ -877,6 +877,12 @@ Recibe `{"codigo":"123456"}`: el código de 6 dígitos de la app, o un código d
 
 Cierra la sesión de este dispositivo y borra la cookie. Responde `204`, aunque ya estuviera cerrada.
 
+### Cuenta de demostración: `GET` y `POST /api/cuentas/demo`
+
+Si el servidor tiene `DEMO_CORREO`, el botón «Entrar a la demo» abre esa cuenta **sin contraseña**: `POST /api/cuentas/demo` (sin cuerpo; si llega uno, se ignora: la cuenta la decide el servidor) deja la sesión abierta y responde `{"usuario"}`, como un inicio de sesión. `GET /api/cuentas/demo` responde `{"disponible": true|false}` para saber si mostrar el botón. Sin `DEMO_CORREO`, o si esa cuenta no existe, `POST` responde `404`.
+
+La cuenta de demostración **no puede cambiar su seguridad**: cambiar la contraseña, la verificación en dos pasos (activar, confirmar, desactivar, códigos de respaldo) y cerrar otras sesiones responden `403`. Así nadie la puede secuestrar; todo lo demás (cartera, órdenes, bot, chat) funciona normal.
+
 ### `GET /api/cuentas/yo`
 
 Devuelve `{"usuario": {...}}`, o `401` si no hay sesión. Sirve al frontend para saber si hay alguien conectado al cargar la página.

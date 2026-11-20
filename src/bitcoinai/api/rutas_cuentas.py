@@ -19,6 +19,7 @@ from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from bitcoinai.api.configuracion import Configuracion
+from bitcoinai.api.errores import ApiError
 from bitcoinai.usuarios.modelo import DatosRegistro, Usuario
 from bitcoinai.usuarios.servicio import Cliente, ServicioCuentas
 from bitcoinai.usuarios.sesiones import DURACION_DESAFIO, DURACION_SESION, Sesion
@@ -135,6 +136,17 @@ def crear_rutas_cuentas(servicio: ServicioCuentas, config: Configuracion) -> API
         cookies.borrar(respuesta, cookies.verificacion)
         return {"usuario": usuario_a_json(usuario)}
 
+    def es_demo(usuario: Usuario) -> bool:
+        return bool(config.demo_correo) and usuario.correo.lower() == config.demo_correo
+
+    def con_seguridad_editable(peticion: Request) -> tuple[Usuario, Sesion]:
+        """La sesión, si la cuenta puede cambiar su seguridad (la de demostración no)."""
+        usuario, sesion = sesion_de(peticion, servicio, cookies)
+        if es_demo(usuario):
+            raise ApiError(403, "La cuenta de demostración no puede cambiar su seguridad. "
+                                "Crea tu propia cuenta para probarlo.")
+        return usuario, sesion
+
     def pedir_codigo(respuesta: Response, token: str, correo: str) -> dict[str, Any]:
         cookies.poner(respuesta, cookies.verificacion, token, DURACION_VERIFICACION)
         return {"verificarCorreo": True, "correo": correo}
@@ -183,6 +195,20 @@ def crear_rutas_cuentas(servicio: ServicioCuentas, config: Configuracion) -> API
         usuario, token = servicio.completar_segundo_paso(desafio, cuerpo.codigo, cliente_de(peticion, config))
         return abrir(respuesta, usuario, token)
 
+    @rutas.get("/api/cuentas/demo")
+    def demo_disponible() -> dict[str, Any]:
+        """Si el servidor tiene cuenta de demostración (para mostrar el botón «Entrar a la demo»)."""
+        return {"disponible": bool(config.demo_correo)}
+
+    @rutas.post("/api/cuentas/demo")
+    def entrar_demo(peticion: Request, respuesta: Response) -> dict[str, Any]:
+        """Abre la cuenta de demostración sin contraseña (404 si el servidor no tiene una)."""
+        abierta = servicio.iniciar_demo(config.demo_correo, cliente_de(peticion, config)) \
+            if config.demo_correo else None
+        if abierta is None:
+            raise ApiError(404, "La demo no está disponible en este momento")
+        return abrir(respuesta, *abierta)
+
     @rutas.delete("/api/sesion", status_code=204)
     def cerrar(peticion: Request, respuesta: Response) -> None:
         """Cierra la sesión de este dispositivo (no falla si ya estaba cerrada)."""
@@ -202,27 +228,27 @@ def crear_rutas_cuentas(servicio: ServicioCuentas, config: Configuracion) -> API
     @rutas.post("/api/cuentas/dos-pasos")
     def iniciar_dos_pasos(peticion: Request) -> dict[str, Any]:
         """Secreto nuevo y enlace ``otpauth://`` para mostrar como código QR."""
-        usuario, _ = sesion_de(peticion, servicio, cookies)
+        usuario, _ = con_seguridad_editable(peticion)
         configuracion = servicio.iniciar_dos_pasos(usuario.id)
         return {"secreto": configuracion.secreto, "uri": configuracion.uri}
 
     @rutas.post("/api/cuentas/dos-pasos/confirmar")
     def confirmar_dos_pasos(cuerpo: CuerpoCodigo, peticion: Request) -> dict[str, Any]:
         """Activa la verificación con el primer código de la app; devuelve los códigos de respaldo."""
-        usuario, _ = sesion_de(peticion, servicio, cookies)
+        usuario, _ = con_seguridad_editable(peticion)
         codigos = servicio.confirmar_dos_pasos(usuario.id, cuerpo.codigo, cliente_de(peticion, config))
         return {"codigosRespaldo": list(codigos)}
 
     @rutas.post("/api/cuentas/dos-pasos/desactivar", status_code=204)
     def desactivar_dos_pasos(cuerpo: CuerpoDesactivar, peticion: Request) -> None:
         """Apaga la verificación en dos pasos; exige la contraseña y un código válido."""
-        usuario, _ = sesion_de(peticion, servicio, cookies)
+        usuario, _ = con_seguridad_editable(peticion)
         servicio.desactivar_dos_pasos(usuario.id, cuerpo.contrasena, cuerpo.codigo, cliente_de(peticion, config))
 
     @rutas.post("/api/cuentas/dos-pasos/codigos")
     def regenerar_codigos(cuerpo: CuerpoCodigo, peticion: Request) -> dict[str, Any]:
         """Diez códigos de respaldo nuevos; los anteriores dejan de servir."""
-        usuario, _ = sesion_de(peticion, servicio, cookies)
+        usuario, _ = con_seguridad_editable(peticion)
         codigos = servicio.regenerar_codigos(usuario.id, cuerpo.codigo, cliente_de(peticion, config))
         return {"codigosRespaldo": list(codigos)}
 
@@ -235,13 +261,13 @@ def crear_rutas_cuentas(servicio: ServicioCuentas, config: Configuracion) -> API
     @rutas.delete("/api/cuentas/sesiones/{sesion_id}", status_code=204)
     def cerrar_una(sesion_id: int, peticion: Request) -> None:
         """Cierra una sesión de otro dispositivo por su id (la sesión actual no se puede cerrar así)."""
-        usuario, _ = sesion_de(peticion, servicio, cookies)
+        usuario, _ = con_seguridad_editable(peticion)
         servicio.cerrar_otra_sesion(usuario.id, sesion_id, cliente_de(peticion, config))
 
     @rutas.post("/api/cuentas/sesiones/cerrar-otras")
     def cerrar_otras(peticion: Request) -> dict[str, Any]:
         """Cierra la sesión en todos los demás dispositivos."""
-        usuario, actual = sesion_de(peticion, servicio, cookies)
+        usuario, actual = con_seguridad_editable(peticion)
         return {"cerradas": servicio.cerrar_otras_sesiones(usuario.id, actual.id, cliente_de(peticion, config))}
 
     @rutas.get("/api/cuentas/actividad")
@@ -255,7 +281,7 @@ def crear_rutas_cuentas(servicio: ServicioCuentas, config: Configuracion) -> API
     @rutas.post("/api/cuentas/contrasena", status_code=204)
     def cambiar_contrasena(cuerpo: CuerpoContrasena, peticion: Request) -> None:
         """Cambia la contraseña y cierra las demás sesiones."""
-        usuario, actual = sesion_de(peticion, servicio, cookies)
+        usuario, actual = con_seguridad_editable(peticion)
         servicio.cambiar_contrasena(usuario.id, cuerpo.contrasena_actual, cuerpo.contrasena_nueva, actual.id,
                                     cliente_de(peticion, config))
 

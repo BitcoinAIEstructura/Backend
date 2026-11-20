@@ -37,6 +37,9 @@ class Configuracion:
         limite_general: peticiones a ``/api`` por minuto y por IP (``LIMITE_GENERAL``, 600).
         limite_costosas: peticiones por minuto y por IP a las rutas costosas, como la IA
             (``LIMITE_COSTOSAS``, 30).
+        demo_correo: correo de la cuenta de demostración (``DEMO_CORREO``). Con él, el botón
+            «Entrar a la demo» abre esa cuenta sin contraseña, y esa cuenta no puede cambiar su
+            seguridad (contraseña, dos pasos, sesiones). Vacío: no hay demo.
     """
 
     # Servidor y despliegue.
@@ -61,6 +64,9 @@ class Configuracion:
     # Límites de peticiones por minuto y por IP.
     limite_general: int = 600
     limite_costosas: int = 30
+
+    # Cuenta de demostración (vacío: apagada).
+    demo_correo: str = ""
 
     @property
     def ruta_base_datos(self) -> str:
@@ -91,6 +97,7 @@ class Configuracion:
             confiar_proxy=_booleano(variables, "CONFIAR_PROXY"),
             limite_general=_entero(variables, "LIMITE_GENERAL", 600, 1, 1_000_000),
             limite_costosas=_entero(variables, "LIMITE_COSTOSAS", 30, 1, 100_000),
+            demo_correo=_texto(variables, "DEMO_CORREO", "").lower(),
         )
 
 

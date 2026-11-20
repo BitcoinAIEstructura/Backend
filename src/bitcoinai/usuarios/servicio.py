@@ -335,6 +335,20 @@ class ServicioCuentas:
         usuario, token = self._abrir_sesion(credenciales.usuario_id, cliente)
         return ResultadoInicio(usuario=usuario, token_sesion=token)
 
+    def iniciar_demo(self, correo: str, cliente: Cliente) -> tuple[Usuario, str] | None:
+        """Abre una sesión en la cuenta de demostración, sin contraseña ni segundo paso.
+
+        Solo la llama la ruta de la demo, con el correo de la configuración (nunca uno que mande
+        el navegador). Devuelve None si esa cuenta no existe.
+        """
+        try:
+            credenciales = self.usuarios.credenciales_por_correo(normalizar_correo(correo))
+        except DatoInvalidoError:
+            return None
+        if credenciales is None:
+            return None
+        return self._abrir_sesion(credenciales.usuario_id, cliente, "(demo)")
+
     def _abrir_sesion(self, usuario_id: int, cliente: Cliente, detalle: str = "") -> tuple[Usuario, str]:
         usuario = self.usuarios.por_id(usuario_id)
         assert usuario is not None
